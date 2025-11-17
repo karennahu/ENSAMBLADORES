@@ -1,0 +1,38 @@
+A) Identificación de líneas correctas e incorrectas
+
+La Fase 2 del proyecto cubre la fase del análisis sintáctico y semántico, es decir, analizar los elementos que integran las líneas del programa fuente que se encuentran en la definición de los segmentos de pila, datos y código para verificar que son los correctos y que están en el orden correcto, conforme a la siguiente sintaxis para la definición de pila y datos, y la sintaxis de cada instrucción asignada a su proyecto.
+
+Sintaxis de definición del segmento de pila
+
+.stack segment (pseudoinstrucción que identifica el inicio de la definición del segmento de pila)
+dw constante numérica palabra sin signo dup(constante numérica palabra con/sin signo)
+ends (pseudoinstrucción que identifica el fin de la definición de un segmento)
+
+Sintaxis de definición del segmento de datos
+
+.data segment (pseudoinstrucción que identifica el inicio de la definición del segmento de datos)
+símbolo db constante caracter
+símbolo db constante numérica byte con/sin signo
+símbolo db constante numérica palabra sin signo dup (constante caracter byte)
+símbolo db constante numérica palabra sin signo dup (constante numérica byte con/sin signo)
+símbolo dw constante numérica palabra con/sin signo
+símbolo dw constante numérica palabra sin signo dup(constante numérica palabra con/sin signo)
+símbolo equ constante numérica palabra con/sin signo
+ends (pseudoinstrucción que identifica el fin de la definición de un segmento)
+
+En el análisis de la definición del segmento de código, se debe considerar en términos generales:
+
+Que el número de elementos sea correcto.
+Que los elementos sean correctos.
+Que los argumentos sean del mismo tamaño (cuando la instrucción así lo requiera).
+Las etiquetas utilizadas como operandos en las instrucciones de transferencia deben definirse previamente.
+La sintaxis de cada instrucción la podrán consultar en la ayuda del emu8086 versión 4.08.
+Esta fase del proyecto debe cubrir la característica de desplegar la línea del programa fuente analizada y frente a ella el resultado de la verificación con la frase Correcta o Incorrecta, según sea el caso, así como mostrar la tabla de símbolos. Para el caso en que la línea sea incorrecta, se deberá desplegar adicionalmente la causa del error claramente descrita y entendible para el programador.
+
+B) Llenado de Tabla de símbolos
+
+En esta fase del proyecto se debe comenzar a llenar la tabla de símbolos (considerar el llenado de los campos símbolo, tipo, valor y tamaño). Al finalizar el despliegue de las líneas del programa, se deberá desplegar la tabla de símbolos.
+
+Alcance para la etapa de revisión
+
+El alcance a entregar en la revisión deberá cubrir como mínimo el análisis de la definición de los segmentos de pila y datos, y la mitad de las instrucciones asignadas por equipo.
