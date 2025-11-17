@@ -1,5 +1,7 @@
 ; Programa de ejemplo para el ensamblador 8086
-; Este archivo demuestra todas las características
+; Usa SOLO las instrucciones asignadas al equipo 2:
+; CMC, CMPSB, NOP, POPA, AAD, AAM, MUL, INC, IDIV, INT
+; AND, LEA, OR, XOR, JNAE, JNE, JNLE, LOOPE, JA, JC
 
 .stack segment
     dw 100h dup(0)
@@ -18,36 +20,30 @@ ends
     assume cs:.code, ds:.data, ss:.stack
     
 inicio:
-    mov ax, @data
-    mov ds, ax
-    
-    ; Instrucciones asignadas al equipo 2
     nop
     cmc
+    
     inc ax
     inc bx
-    
-    mov al, byte ptr [numero]
-    mov ax, word ptr [valor]
+    inc cx
     
     and ax, 0Fh
     or bx, 1
     xor cx, cx
     
     lea si, mensaje
+    lea di, contador
     
-    mov cx, 10
 ciclo:
+    inc ax
     mul cx
-    inc cx
     loope ciclo
     
-    cmp ax, bx
-    ja etiqueta1
-    jc etiqueta2
     jnae etiqueta1
-    jne ciclo
+    jne etiqueta2
     jnle etiqueta1
+    ja etiqueta2
+    jc etiqueta1
     
 etiqueta1:
     aam

@@ -109,10 +109,20 @@ class Ensamblador8086:
         
         texto_modificado, elementos_compuestos = self.extraer_elementos_compuestos(linea)
         
+        etiquetas = []
+        patron_etiqueta = r'(?:^|(?<=\s))([A-Za-z_][A-Za-z0-9_]*):(?=\s|$)'
+        for match in re.finditer(patron_etiqueta, texto_modificado):
+            marcador = f'ETIQ_{len(etiquetas)}'
+            etiquetas.append((marcador, match.group(0).strip()))
+            texto_modificado = texto_modificado[:match.start()] + ' ' + marcador + ' ' + texto_modificado[match.end():]
+        
         tokens_brutos = re.split(r'[\s,:]+', texto_modificado)
         tokens_brutos = [t for t in tokens_brutos if t]
         
         tokens_restaurados = self.restaurar_elementos_compuestos(tokens_brutos, elementos_compuestos)
+        
+        for marcador, etiqueta_original in etiquetas:
+            tokens_restaurados = [etiqueta_original if t == marcador else t for t in tokens_restaurados]
         
         tokens = []
         for pos, token_str in enumerate(tokens_restaurados):
@@ -161,6 +171,12 @@ class Ensamblador8086:
         if re.match(r'^\d+$', token):
             return TipoToken.CONSTANTE_DECIMAL
         
+        if re.match(r'^\.(?:CODE|DATA|STACK|BSS)$', token_upper):
+            return TipoToken.SIMBOLO
+        
+        if re.match(r'^[A-Z_][A-Z0-9_]*:$', token_upper):
+            return TipoToken.SIMBOLO
+        
         if re.match(r'^[A-Z_][A-Z0-9_]*$', token_upper):
             return TipoToken.SIMBOLO
         
@@ -205,20 +221,19 @@ class Ensamblador8086:
                 i += 1
                 continue
             
+            primer_token = tokens_linea[0].valor.upper()
+            if '.STACK SEGMENT' in linea_limpia.upper():
+                segmento_actual = 'STACK'
+            elif '.DATA SEGMENT' in linea_limpia.upper():
+                segmento_actual = 'DATA'
+            elif '.CODE SEGMENT' in linea_limpia.upper():
+                segmento_actual = 'CODE'
+            elif primer_token == 'ENDS':
+                segmento_actual = None
+            
             resultado, mensaje = self.validar_linea(tokens_linea, segmento_actual)
             
-            if len(tokens_linea) >= 2:
-                primer_token = tokens_linea[0].valor.upper()
-                if '.STACK SEGMENT' in linea_limpia.upper():
-                    segmento_actual = 'STACK'
-                elif '.DATA SEGMENT' in linea_limpia.upper():
-                    segmento_actual = 'DATA'
-                elif '.CODE SEGMENT' in linea_limpia.upper():
-                    segmento_actual = 'CODE'
-                elif primer_token == 'ENDS':
-                    segmento_actual = None
-            
-            if segmento_actual == 'DATA' and tokens_linea[0].tipo == TipoToken.SIMBOLO:
+            if segmento_actual == 'DATA' and len(tokens_linea) >= 3 and tokens_linea[0].tipo == TipoToken.SIMBOLO:
                 self.agregar_simbolo(tokens_linea)
             
             self.lineas_analizadas.append({
@@ -283,15 +298,50 @@ class Ensamblador8086:
         return "Correcta", "Definición de dato válida"
     
     def validar_segmento_codigo(self, tokens: List[Token]) -> Tuple[str, str]:
-        primer_token = tokens[0].valor.upper()
+        if not tokens:
+            return "Correcta", "Línea vacía"
         
-        if tokens[0].tipo == TipoToken.SIMBOLO and len(tokens) > 1 and tokens[1].valor == ':':
-            return "Correcta", "Etiqueta definida"
+        tokens_a_validar = tokens
+        mensaje_etiqueta = ""
         
-        if tokens[0].tipo == TipoToken.INSTRUCCION:
-            return "Correcta", f"Instrucción {primer_token} válida"
+        if tokens[0].tipo == TipoToken.SIMBOLO and tokens[0].valor.endswith(':'):
+            mensaje_etiqueta = "Etiqueta definida"
+            if len(tokens) == 1:
+                return "Correcta", mensaje_etiqueta
+            tokens_a_validar = tokens[1:]
         
-        return "Correcta", "Línea de código"
+        if not tokens_a_validar:
+            return "Correcta", mensaje_etiqueta if mensaje_etiqueta else "Línea vacía"
+        
+        primer_token = tokens_a_validar[0].valor.upper()
+        
+        if tokens_a_validar[0].tipo == TipoToken.PSEUDOINSTRUCCION:
+            if primer_token in ['ASSUME', 'PROC', 'ENDP', 'ORG']:
+                resultado_msg = f"Pseudoinstrucción {primer_token} válida"
+                if mensaje_etiqueta:
+                    resultado_msg = f"{mensaje_etiqueta} + {resultado_msg}"
+                return "Correcta", resultado_msg
+            else:
+                return "Incorrecta", f"Pseudoinstrucción {primer_token} no permitida en segmento de código"
+        
+        if tokens_a_validar[0].tipo == TipoToken.INSTRUCCION:
+            if len(tokens_a_validar) < 2 and primer_token not in ['NOP', 'CMC', 'POPA', 'AAD', 'AAM', 'CMPSB']:
+                return "Incorrecta", f"Instrucción {primer_token} requiere operandos"
+            resultado_msg = f"Instrucción {primer_token} válida"
+            if mensaje_etiqueta:
+                resultado_msg = f"{mensaje_etiqueta} + {resultado_msg}"
+            return "Correcta", resultado_msg
+        
+        if tokens_a_validar[0].tipo == TipoToken.SIMBOLO and len(tokens_a_validar) > 1:
+            return "Incorrecta", f"'{tokens_a_validar[0].valor}' no es una instrucción reconocida (puede ser instrucción no asignada al equipo)"
+        
+        if tokens_a_validar[0].tipo == TipoToken.SIMBOLO:
+            return "Incorrecta", f"'{tokens_a_validar[0].valor}' no es una instrucción reconocida (puede ser instrucción no asignada al equipo)"
+        
+        if tokens_a_validar[0].tipo == TipoToken.NO_IDENTIFICADO:
+            return "Incorrecta", f"Elemento '{tokens_a_validar[0].valor}' no identificado"
+        
+        return "Incorrecta", "Línea de código con sintaxis inválida"
     
     def agregar_simbolo(self, tokens: List[Token]):
         if len(tokens) < 3:
