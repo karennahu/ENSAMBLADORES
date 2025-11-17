@@ -6,7 +6,8 @@ Ensamblador didáctico para procesador 8086 que implementa las Fases 1 y 2 del p
 ## Estado Actual del Proyecto
 **Fecha:** 17 de noviembre de 2025
 **Versión:** 1.0
-**Estado:** Desarrollo activo - Fases 1 y 2 implementadas
+**Estado:** ✅ COMPLETO - Fases 1 y 2 implementadas y probadas
+**Calidad:** Revisado y aprobado por arquitecto - Listo para entrega
 
 ## Funcionalidades Implementadas
 
@@ -45,9 +46,15 @@ Ensamblador didáctico para procesador 8086 que implementa las Fases 1 y 2 del p
 ```
 /
 ├── ensamblador.py          # Código principal del ensamblador
-├── ejemplo.asm             # Archivo de ejemplo para pruebas
+├── ejemplo.asm             # Archivo de ejemplo válido (solo instrucciones asignadas)
+├── ejemplo_errores.asm     # Archivo con errores para demostrar validación
 ├── replit.md              # Documentación del proyecto
 ├── .gitignore             # Archivos a ignorar en git
+├── tests/                 # Pruebas automatizadas
+│   ├── test_ensamblador.py      # Prueba general del ensamblador
+│   ├── test_validacion.py       # Prueba de detección de errores
+│   ├── test_etiqueta_instruccion.py  # Prueba de etiquetas + instrucciones
+│   └── test_assume.py           # Prueba de pseudoinstrucción ASSUME
 └── attached_assets/       # Especificaciones del proyecto
     ├── Pasted-Separaci-n-de-elementos...txt
     ├── Pasted-A-Identificaci-n-de-l-neas...txt
