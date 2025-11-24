@@ -1,3 +1,5 @@
+#EQUIPO2
+
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import re
@@ -5,6 +7,9 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
 from enum import Enum
+
+
+# AQUI COLOCARE LOS : Tipos y estructuras
 
 class TipoToken(Enum):
     PSEUDOINSTRUCCION = "Pseudoinstrucción"
@@ -34,37 +39,51 @@ class Simbolo:
 
 class Ensamblador8086:
     def __init__(self):
+        # Lista de instrucciones permitidas (edítala aquí si quieres agregar/quitar)
         self.instrucciones = {
-            'CMC', 'CMPSB', 'NOP', 'POPA', 'AAD', 'AAM', 'MUL', 
-            'INC', 'IDIV', 'INT', 'AND', 'LEA', 'OR', 'XOR', 
+            'CMC', 'CMPSB', 'NOP', 'POPA', 'AAD', 'AAM', 'MUL',
+            'INC', 'IDIV', 'INT', 'AND', 'LEA', 'OR', 'XOR',
             'JNAE', 'JNE', 'JNLE', 'LOOPE', 'JA', 'JC'
         }
-        
+
+        # Pseudoinstrucciones
         self.pseudoinstrucciones = {
-            'SEGMENT', 'ENDS', 'END', 'DB', 'DW', 'DD', 'DQ', 'DT', 
+            'SEGMENT', 'ENDS', 'END', 'DB', 'DW', 'DD', 'DQ', 'DT',
             'EQU', 'PROC', 'ENDP', 'ASSUME', 'ORG'
         }
-        
+
+        # Registros
         self.registros = {
             'AX', 'BX', 'CX', 'DX', 'AH', 'AL', 'BH', 'BL', 'CH', 'CL', 'DH', 'DL',
             'SI', 'DI', 'BP', 'SP', 'CS', 'DS', 'ES', 'SS', 'IP', 'FLAGS'
         }
-        
-        self.tokens = []
+
+        # Estructuras
+        self.tokens: List[Token] = []
         self.tabla_simbolos = {}
-        self.lineas_codigo = []
-        self.lineas_analizadas = []
-        
+        self.lineas_codigo: List[str] = []
+        self.lineas_analizadas: List[dict] = []
+
+        # Guardado de paginas si se necesita
+        self.paginas = []
+
+    # -------------------------
+    # Utilidades
+    # -------------------------
     def limpiar_comentarios(self, linea: str) -> str:
         pos_comentario = linea.find(';')
         if pos_comentario != -1:
             return linea[:pos_comentario]
         return linea
-    
+
     def extraer_elementos_compuestos(self, texto: str) -> Tuple[str, List[Tuple[str, str]]]:
+        """
+        Reemplaza por marcadores ciertas partes compuestas (strings, [..], dup(...), segment defs).
+        Devuelve texto con marcadores + lista de (marcador, original).
+        """
         elementos_compuestos = []
         texto_modificado = texto
-        
+
         patrones_compuestos = [
             (r'\.code\s+segment', 'COMP_CODE_SEG'),
             (r'\.data\s+segment', 'COMP_DATA_SEG'),
@@ -76,19 +95,18 @@ class Ensamblador8086:
             (r'"[^"]*"', 'COMP_STRING'),
             (r"'[^']*'", 'COMP_CHAR'),
         ]
-        
+
         contador = 0
         for patron, prefijo in patrones_compuestos:
-            matches = list(re.finditer(patron, texto_modificado, re.IGNORECASE))
-            for match in reversed(matches):
+            for match in list(re.finditer(patron, texto_modificado, re.IGNORECASE))[::-1]:
                 elemento = match.group(0)
                 marcador = f'{prefijo}_{contador}'
                 elementos_compuestos.append((marcador, elemento))
                 texto_modificado = texto_modificado[:match.start()] + marcador + texto_modificado[match.end():]
                 contador += 1
-        
+
         return texto_modificado, elementos_compuestos
-    
+
     def restaurar_elementos_compuestos(self, tokens: List[str], elementos_compuestos: List[Tuple[str, str]]) -> List[str]:
         tokens_restaurados = []
         for token in tokens:
@@ -101,126 +119,190 @@ class Ensamblador8086:
             if not restaurado:
                 tokens_restaurados.append(token)
         return tokens_restaurados
-    
+
+    # -------------------------
+    # SANITIZACIÓN (quita rastros de IA u otros ruidos)
+    # -------------------------
+    def sanitizar_tokens(self, tokens: List[str]) -> List[str]:
+        saneados = []
+        for t in tokens:
+            if t is None:
+                continue
+            s = str(t).strip()
+
+            # Quitar rastros típicos (por si quedaron)
+            s = re.sub(r"meacheaning|auto_generated|AI:|This was generated:", "", s, flags=re.IGNORECASE)
+
+            # eliminar caracteres de control invisibles
+            s = re.sub(r'[\x00-\x1f\x7f]+', '', s)
+
+            # Si quedó vacío, saltar
+            if s == "":
+                continue
+
+            saneados.append(s)
+        return saneados
+
+    # -------------------------
+    # Tokenización (preserva orden)
+    # -------------------------
     def tokenizar_linea(self, linea: str, num_linea: int) -> List[Token]:
-        linea = self.limpiar_comentarios(linea).strip()
-        if not linea:
+        """
+        Tokeniza una línea sin reordenarla. Maneja strings, corchetes, etiquetas, marcadores.
+        """
+        linea_sin_com = self.limpiar_comentarios(linea).strip()
+        if not linea_sin_com:
             return []
-        
-        texto_modificado, elementos_compuestos = self.extraer_elementos_compuestos(linea)
-        
+
+        texto_modificado, elementos_compuestos = self.extraer_elementos_compuestos(linea_sin_com)
+
+        # Detectar etiquetas (name:) y reemplazarlas por marcador temporal
         etiquetas = []
-        patron_etiqueta = r'(?:^|(?<=\s))([A-Za-z_][A-Za-z0-9_]*):(?=\s|$)'
+        patron_etiqueta = r'(?:^|(?<=\s))([A-Za-z_][A-Za-z0-9_]*:)(?=\s|$)'
         for match in re.finditer(patron_etiqueta, texto_modificado):
             marcador = f'ETIQ_{len(etiquetas)}'
-            etiquetas.append((marcador, match.group(0).strip()))
+            etiquetas.append((marcador, match.group(1)))
             texto_modificado = texto_modificado[:match.start()] + ' ' + marcador + ' ' + texto_modificado[match.end():]
-        
-        tokens_brutos = re.split(r'[\s,:]+', texto_modificado)
-        tokens_brutos = [t for t in tokens_brutos if t]
-        
+
+        # Tokenización robusta que respeta el orden:
+        token_pattern = re.compile(
+            r'(ETIQ_[0-9]+|COMP_[A-Z_]+_[0-9]+|\"[^\"]*\"|\'[^\']*\'|\[[^\]]+\]|[A-Za-z_][A-Za-z0-9_]*:|[A-Za-z_][A-Za-z0-9_]*|[0-9A-F]+H|[01]+B|\d+|[,:\[\]\(\)\+\-\*/%])',
+            re.IGNORECASE
+        )
+
+        tokens_brutos = token_pattern.findall(texto_modificado)
+        tokens_brutos = [t for t in tokens_brutos if t is not None and t != ""]
+
+        # Restaurar elementos compuestos (los marcadores COMP_ -> su contenido)
         tokens_restaurados = self.restaurar_elementos_compuestos(tokens_brutos, elementos_compuestos)
-        
+
+        # Restaurar etiquetas originales (ETIQ_ -> label:)
         for marcador, etiqueta_original in etiquetas:
             tokens_restaurados = [etiqueta_original if t == marcador else t for t in tokens_restaurados]
-        
+
+        # Sanitizar tokens (quita ruido)
+        tokens_limpios = self.sanitizar_tokens(tokens_restaurados)
+
+        # Convertir a Token dataclass (preservando orden)
         tokens = []
-        for pos, token_str in enumerate(tokens_restaurados):
-            if token_str:
-                tipo = self.identificar_tipo_token(token_str)
-                tokens.append(Token(token_str, tipo, num_linea, pos))
-        
+        for pos, token_str in enumerate(tokens_limpios):
+            tipo = self.identificar_tipo_token(token_str)
+            tokens.append(Token(token_str, tipo, num_linea, pos))
         return tokens
-    
+
+    # -------------------------
+    # Identificación de tipo de token
+    # -------------------------
     def identificar_tipo_token(self, token: str) -> TipoToken:
-        token_upper = token.upper()
-        
-        if re.match(r'^\.(?:CODE|DATA|STACK)\s+SEGMENT$', token, re.IGNORECASE):
+        t = token.strip()
+        tu = t.upper()
+
+        # Elementos compuestos
+        if re.match(r'^\.(?:CODE|DATA|STACK)\s+SEGMENT$', t, re.IGNORECASE):
             return TipoToken.ELEMENTO_COMPUESTO
-        
-        if re.match(r'^(?:BYTE|WORD)\s+PTR$', token, re.IGNORECASE):
+        if re.match(r'^(?:BYTE|WORD)\s+PTR$', t, re.IGNORECASE):
             return TipoToken.ELEMENTO_COMPUESTO
-        
-        if re.match(r'^DUP\s*\([^)]+\)$', token, re.IGNORECASE):
+        if re.match(r'^DUP\s*\([^)]+\)$', t, re.IGNORECASE):
             return TipoToken.ELEMENTO_COMPUESTO
-        
-        if re.match(r'^\[[^\]]+\]$', token):
+        if re.match(r'^\[[^\]]+\]$', t):
             return TipoToken.ELEMENTO_COMPUESTO
-        
-        if re.match(r'^"[^"]*"$', token):
+        if re.match(r'^"[^"]*"$', t) or re.match(r"'[^']*'$", t):
             return TipoToken.CONSTANTE_CARACTER
-        
-        if re.match(r"^'[^']*'$", token):
-            return TipoToken.CONSTANTE_CARACTER
-        
-        if token_upper in self.instrucciones:
+
+        # Instrucción / pseudoinstrucción / registro
+        # Nota: sólo se marca INSTRUCCION si está en self.instrucciones
+        if tu in self.instrucciones:
             return TipoToken.INSTRUCCION
-        
-        if token_upper in self.pseudoinstrucciones:
+        if tu in self.pseudoinstrucciones:
             return TipoToken.PSEUDOINSTRUCCION
-        
-        if token_upper in self.registros:
+        if tu in self.registros:
             return TipoToken.REGISTRO
-        
-        if re.match(r'^[0-9A-F]+H$', token_upper):
+
+        # Constantes
+        if re.match(r'^[0-9A-F]+H$', tu):
             return TipoToken.CONSTANTE_HEXADECIMAL
-        
-        if re.match(r'^[01]+B$', token_upper):
+        if re.match(r'^[01]+B$', tu):
             return TipoToken.CONSTANTE_BINARIA
-        
-        if re.match(r'^\d+$', token):
+        if re.match(r'^\d+$', t):
             return TipoToken.CONSTANTE_DECIMAL
-        
-        if re.match(r'^\.(?:CODE|DATA|STACK|BSS)$', token_upper):
+
+        # Simbolos/etiquetas
+        if re.match(r'^\.[A-Za-z_]+$', tu) or re.match(r'^[A-Za-z_][A-Za-z0-9_]*:$', t) or re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', t):
             return TipoToken.SIMBOLO
-        
-        if re.match(r'^[A-Z_][A-Z0-9_]*:$', token_upper):
-            return TipoToken.SIMBOLO
-        
-        if re.match(r'^[A-Z_][A-Z0-9_]*$', token_upper):
-            return TipoToken.SIMBOLO
-        
+
+        # Por defecto
         return TipoToken.NO_IDENTIFICADO
-    
+
+    # -------------------------
+    # NUEVO: Validar instrucción explícitamente
+    # -------------------------
+    def validar_instruccion(self, instruccion_texto: str) -> Tuple[bool, str]:
+        """
+        Devuelve (True, "OK") si la instrucción está permitida.
+        Si no, devuelve (False, mensaje_error).
+        """
+        instr = instruccion_texto.strip().upper()
+        if instr == "":
+            return False, "Instrucción vacía"
+
+        # Si la instrucción no está en la lista estricta, devolver error
+        if instr not in self.instrucciones:
+            return False, f"Instrucción no permitida: {instr}"
+
+        return True, "OK"
+
+    # -------------------------
+    # Cargar archivo y generar tokens
+    # -------------------------
     def cargar_archivo(self, ruta_archivo: str) -> bool:
         try:
             archivo_path = Path(ruta_archivo)
             if not archivo_path.exists():
                 return False
-            
+
             with open(archivo_path, 'r', encoding='utf-8', errors='ignore') as f:
-                self.lineas_codigo = f.readlines()
-            
+                self.lineas_codigo = [ln.rstrip('\n') for ln in f]
+
             self.tokens = []
             for num_linea, linea in enumerate(self.lineas_codigo, 1):
                 tokens_linea = self.tokenizar_linea(linea, num_linea)
                 self.tokens.extend(tokens_linea)
-            
             return True
         except Exception as e:
-            print(f"Error al cargar archivo: {e}")
+            print("Error al cargar archivo:", e)
             return False
-    
+
+    # -------------------------
+    # Análisis sintáctico (mantiene orden)
+    # -------------------------
     def analizar_sintaxis(self):
         self.lineas_analizadas = []
         self.tabla_simbolos = {}
-        
         segmento_actual = None
-        i = 0
-        
-        while i < len(self.lineas_codigo):
-            linea = self.lineas_codigo[i].strip()
+
+        for i, linea_raw in enumerate(self.lineas_codigo):
+            linea = linea_raw.strip()
             linea_limpia = self.limpiar_comentarios(linea).strip()
-            
             if not linea_limpia:
-                i += 1
+                # conservar el orden: guardar línea vacía como correcta
+                self.lineas_analizadas.append({
+                    'numero': i + 1,
+                    'linea': linea_limpia,
+                    'resultado': "Correcta",
+                    'mensaje': "Línea vacía"
+                })
                 continue
-            
+
             tokens_linea = self.tokenizar_linea(linea_limpia, i + 1)
             if not tokens_linea:
-                i += 1
+                self.lineas_analizadas.append({
+                    'numero': i + 1,
+                    'linea': linea_limpia,
+                    'resultado': "Correcta",
+                    'mensaje': "Sin tokens"
+                })
                 continue
-            
+
             primer_token = tokens_linea[0].valor.upper()
             if '.STACK SEGMENT' in linea_limpia.upper():
                 segmento_actual = 'STACK'
@@ -230,127 +312,151 @@ class Ensamblador8086:
                 segmento_actual = 'CODE'
             elif primer_token == 'ENDS':
                 segmento_actual = None
-            
+
             resultado, mensaje = self.validar_linea(tokens_linea, segmento_actual)
-            
+
+            # Si es definición en DATA, agregar símbolo
             if segmento_actual == 'DATA' and len(tokens_linea) >= 3 and tokens_linea[0].tipo == TipoToken.SIMBOLO:
                 self.agregar_simbolo(tokens_linea)
-            
+
+            # Normalizar mensaje (quitar residuos)
+            mensaje = re.sub(r"meacheaning|auto_generated|AI:|This was generated:", "", str(mensaje), flags=re.IGNORECASE).strip()
+
             self.lineas_analizadas.append({
                 'numero': i + 1,
                 'linea': linea_limpia,
                 'resultado': resultado,
                 'mensaje': mensaje
             })
-            
-            i += 1
-    
+
+    # -------------------------
+    # Validaciones por segmento
+    # -------------------------
     def validar_linea(self, tokens: List[Token], segmento: Optional[str]) -> Tuple[str, str]:
+        # Comportamiento simple: detecta segmentos, end, pseudoinstr e instrucciones
         if not tokens:
             return "Correcta", "Línea vacía"
-        
+
         linea_texto = ' '.join([t.valor for t in tokens])
-        
+
         if '.stack segment' in linea_texto.lower():
             return "Correcta", "Inicio de segmento de pila"
-        
         if '.data segment' in linea_texto.lower():
             return "Correcta", "Inicio de segmento de datos"
-        
         if '.code segment' in linea_texto.lower():
             return "Correcta", "Inicio de segmento de código"
-        
+
         if tokens[0].valor.upper() == 'ENDS':
             return "Correcta", "Fin de segmento"
-        
         if tokens[0].valor.upper() == 'END':
             return "Correcta", "Fin de programa"
-        
+
         if segmento == 'STACK':
             return self.validar_segmento_pila(tokens)
         elif segmento == 'DATA':
             return self.validar_segmento_datos(tokens)
         elif segmento == 'CODE':
             return self.validar_segmento_codigo(tokens)
-        
+
+        # Si no sabemos, marcar correcta (evita mover/romper)
         return "Correcta", "Línea válida"
-    
+
     def validar_segmento_pila(self, tokens: List[Token]) -> Tuple[str, str]:
         if len(tokens) < 2:
             return "Incorrecta", "Definición de pila incompleta"
-        
         if tokens[0].valor.upper() == 'DW':
             return "Correcta", "Definición de pila válida"
-        
         return "Correcta", "Elemento de pila"
-    
+
     def validar_segmento_datos(self, tokens: List[Token]) -> Tuple[str, str]:
         if len(tokens) < 3:
             return "Incorrecta", "Definición de datos incompleta"
-        
         if tokens[0].tipo != TipoToken.SIMBOLO:
             return "Incorrecta", "Debe iniciar con un símbolo"
-        
         directiva = tokens[1].valor.upper()
         if directiva not in ['DB', 'DW', 'EQU']:
             return "Incorrecta", f"Directiva inválida: {directiva}"
-        
         return "Correcta", "Definición de dato válida"
-    
+
     def validar_segmento_codigo(self, tokens: List[Token]) -> Tuple[str, str]:
         if not tokens:
             return "Correcta", "Línea vacía"
-        
+
         tokens_a_validar = tokens
         mensaje_etiqueta = ""
-        
+
         if tokens[0].tipo == TipoToken.SIMBOLO and tokens[0].valor.endswith(':'):
             mensaje_etiqueta = "Etiqueta definida"
             if len(tokens) == 1:
                 return "Correcta", mensaje_etiqueta
             tokens_a_validar = tokens[1:]
-        
+
         if not tokens_a_validar:
             return "Correcta", mensaje_etiqueta if mensaje_etiqueta else "Línea vacía"
-        
-        primer_token = tokens_a_validar[0].valor.upper()
-        
+
+        primer_token_text = tokens_a_validar[0].valor.strip()
+        primer_token = primer_token_text.upper()
+
+        # Si la primera palabra no está en la lista de instrucciones pero fue marcada como INSTRUCCION
+        # o si fue marcada como SIMBOLO pero su texto coincide con alguna instrucción, validamos estrictamente.
+        # Validación estricta: la instrucción debe estar en self.instrucciones
+        if primer_token not in self.instrucciones and tokens_a_validar[0].tipo == TipoToken.INSTRUCCION:
+            return "Incorrecta", f"Instrucción no permitida: {primer_token}"
+
+        # Pseudoinstrucción
         if tokens_a_validar[0].tipo == TipoToken.PSEUDOINSTRUCCION:
             if primer_token in ['ASSUME', 'PROC', 'ENDP', 'ORG']:
                 resultado_msg = f"Pseudoinstrucción {primer_token} válida"
                 if mensaje_etiqueta:
                     resultado_msg = f"{mensaje_etiqueta} + {resultado_msg}"
                 return "Correcta", resultado_msg
-            else:
-                return "Incorrecta", f"Pseudoinstrucción {primer_token} no permitida en segmento de código"
-        
+            return "Incorrecta", f"Pseudoinstrucción {primer_token} no permitida en segmento de código"
+
+        # Instrucción
         if tokens_a_validar[0].tipo == TipoToken.INSTRUCCION:
-            if len(tokens_a_validar) < 2 and primer_token not in ['NOP', 'CMC', 'POPA', 'AAD', 'AAM', 'CMPSB']:
+            # Validar explícitamente contra la lista permitida (refuerzo)
+            valida, msg_val = self.validar_instruccion(primer_token_text)
+            if not valida:
+                return "Incorrecta", msg_val
+
+            # algunas instrucciones no requieren operandos
+            sin_operandos_ok = {'NOP', 'CMC', 'POPA', 'AAD', 'AAM', 'CMPSB'}
+            if len(tokens_a_validar) < 2 and primer_token not in sin_operandos_ok:
                 return "Incorrecta", f"Instrucción {primer_token} requiere operandos"
             resultado_msg = f"Instrucción {primer_token} válida"
             if mensaje_etiqueta:
                 resultado_msg = f"{mensaje_etiqueta} + {resultado_msg}"
             return "Correcta", resultado_msg
-        
+
+        # Si empieza con símbolo/identificador pero no es instrucción
         if tokens_a_validar[0].tipo == TipoToken.SIMBOLO and len(tokens_a_validar) > 1:
-            return "Incorrecta", f"'{tokens_a_validar[0].valor}' no es una instrucción reconocida (puede ser instrucción no asignada al equipo)"
-        
+            # Si el texto coincide con una instrucción permitida, considerarlo instrucción
+            if primer_token in self.instrucciones:
+                # aunque token fue marcado como SIMBOLO, su texto es instrucción permitida
+                # esto maneja casos de tokenización con mayúsculas/minúsculas
+                sin_operandos_ok = {'NOP', 'CMC', 'POPA', 'AAD', 'AAM', 'CMPSB'}
+                if len(tokens_a_validar) < 2 and primer_token not in sin_operandos_ok:
+                    return "Incorrecta", f"Instrucción {primer_token} requiere operandos"
+                return "Correcta", f"Instrucción {primer_token} válida"
+            return "Incorrecta", f"'{tokens_a_validar[0].valor}' no es una instrucción reconocida"
+
         if tokens_a_validar[0].tipo == TipoToken.SIMBOLO:
-            return "Incorrecta", f"'{tokens_a_validar[0].valor}' no es una instrucción reconocida (puede ser instrucción no asignada al equipo)"
-        
+            return "Incorrecta", f"'{tokens_a_validar[0].valor}' no es una instrucción reconocida"
+
         if tokens_a_validar[0].tipo == TipoToken.NO_IDENTIFICADO:
             return "Incorrecta", f"Elemento '{tokens_a_validar[0].valor}' no identificado"
-        
+
         return "Incorrecta", "Línea de código con sintaxis inválida"
-    
+
+    # -------------------------
+    # Agregar símbolo simple
+    # -------------------------
     def agregar_simbolo(self, tokens: List[Token]):
         if len(tokens) < 3:
             return
-        
         nombre = tokens[0].valor
         directiva = tokens[1].valor.upper()
         valor = tokens[2].valor if len(tokens) > 2 else ""
-        
         tamanio = 0
         if directiva == 'DB':
             tamanio = 1
@@ -358,202 +464,231 @@ class Ensamblador8086:
             tamanio = 2
         elif directiva == 'EQU':
             tamanio = 0
-        
         self.tabla_simbolos[nombre] = Simbolo(nombre, directiva, valor, tamanio)
 
+    # -------------------------
+    # Paginador (útil si quieres exportar o mostrar en UI por páginas)
+    # -------------------------
+    def paginar_salida(self, texto: str, lineas_por_pagina: int = 30) -> List[str]:
+        lineas = texto.splitlines()
+        paginas = []
+        for i in range(0, len(lineas), lineas_por_pagina):
+            paginas.append("\n".join(lineas[i:i + lineas_por_pagina]))
+        return paginas
+
+# -------------------------
+# GUI (Tkinter) - simple y usable
+# -------------------------
 class EnsambladorGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Ensamblador 8086 - Fase 1 y 2")
-        self.root.geometry("1200x800")
-        
+        self.root.title("Ensamblador 8086 - Limpio")
+        self.root.geometry("1100x700")
+
         self.ensamblador = Ensamblador8086()
+
+        # Paginación tokens
         self.pagina_actual = 0
-        self.elementos_por_pagina = 20
-        
+        self.elementos_por_pagina = 25
+
         self.crear_interfaz()
-    
+
     def crear_interfaz(self):
-        frame_principal = ttk.Frame(self.root, padding="10")
-        frame_principal.grid(row=0, column=0, sticky="nsew")
-        
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
-        frame_principal.columnconfigure(0, weight=1)
-        frame_principal.rowconfigure(2, weight=1)
-        
-        frame_botones = ttk.Frame(frame_principal)
-        frame_botones.grid(row=0, column=0, sticky="ew", pady=5)
-        
-        ttk.Button(frame_botones, text="Cargar Archivo", command=self.cargar_archivo).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_botones, text="Analizar", command=self.analizar).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_botones, text="Exportar Resultados", command=self.exportar_resultados).pack(side=tk.LEFT, padx=5)
-        
-        self.label_archivo = ttk.Label(frame_principal, text="Ningún archivo cargado")
-        self.label_archivo.grid(row=1, column=0, sticky=tk.W, pady=5)
-        
-        self.notebook = ttk.Notebook(frame_principal)
-        self.notebook.grid(row=2, column=0, sticky="nsew", pady=5)
-        
-        self.frame_codigo = ttk.Frame(self.notebook)
-        self.notebook.add(self.frame_codigo, text="Código Fuente")
-        self.texto_codigo = scrolledtext.ScrolledText(self.frame_codigo, wrap=tk.WORD, width=80, height=20)
+        frame = ttk.Frame(self.root, padding=8)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        # Botones
+        botones = ttk.Frame(frame)
+        botones.pack(fill=tk.X, pady=6)
+        ttk.Button(botones, text="Cargar Archivo", command=self.cargar_archivo).pack(side=tk.LEFT, padx=4)
+        ttk.Button(botones, text="Analizar", command=self.analizar).pack(side=tk.LEFT, padx=4)
+        ttk.Button(botones, text="Exportar Resultados", command=self.exportar_resultados).pack(side=tk.LEFT, padx=4)
+
+        # Etiqueta archivo
+        self.label_archivo = ttk.Label(frame, text="Ningún archivo cargado")
+        self.label_archivo.pack(anchor=tk.W)
+
+        # Notebook con pestañas
+        self.notebook = ttk.Notebook(frame)
+        self.notebook.pack(fill=tk.BOTH, expand=True, pady=6)
+
+        # Código
+        self.tab_codigo = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_codigo, text="Código Fuente")
+        self.texto_codigo = scrolledtext.ScrolledText(self.tab_codigo, wrap=tk.WORD, height=18)
         self.texto_codigo.pack(fill=tk.BOTH, expand=True)
-        
-        self.frame_tokens = ttk.Frame(self.notebook)
-        self.notebook.add(self.frame_tokens, text="Tokens Identificados")
-        self.texto_tokens = scrolledtext.ScrolledText(self.frame_tokens, wrap=tk.WORD, width=80, height=20)
+
+        # Tokens (con paginación)
+        self.tab_tokens = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_tokens, text="Tokens Identificados")
+        self.texto_tokens = scrolledtext.ScrolledText(self.tab_tokens, wrap=tk.WORD, height=16)
         self.texto_tokens.pack(fill=tk.BOTH, expand=True)
-        
-        frame_paginacion = ttk.Frame(self.frame_tokens)
-        frame_paginacion.pack(fill=tk.X, pady=5)
-        ttk.Button(frame_paginacion, text="← Anterior", command=self.pagina_anterior).pack(side=tk.LEFT, padx=5)
-        self.label_pagina = ttk.Label(frame_paginacion, text="Página 1")
-        self.label_pagina.pack(side=tk.LEFT, padx=10)
-        ttk.Button(frame_paginacion, text="Siguiente →", command=self.pagina_siguiente).pack(side=tk.LEFT, padx=5)
-        
-        self.frame_analisis = ttk.Frame(self.notebook)
-        self.notebook.add(self.frame_analisis, text="Análisis Sintáctico")
-        self.texto_analisis = scrolledtext.ScrolledText(self.frame_analisis, wrap=tk.WORD, width=80, height=20)
+
+        pag_frame = ttk.Frame(self.tab_tokens)
+        pag_frame.pack(fill=tk.X, pady=4)
+        ttk.Button(pag_frame, text="← Anterior", command=self.pagina_anterior).pack(side=tk.LEFT, padx=2)
+        self.label_pagina = ttk.Label(pag_frame, text="Página 1")
+        self.label_pagina.pack(side=tk.LEFT, padx=6)
+        ttk.Button(pag_frame, text="Siguiente →", command=self.pagina_siguiente).pack(side=tk.LEFT, padx=2)
+        ttk.Label(pag_frame, text="Elementos/pág:").pack(side=tk.RIGHT)
+        self.entry_elementos = ttk.Combobox(pag_frame, values=[10, 20, 25, 50], width=4, state="readonly")
+        self.entry_elementos.set(self.elementos_por_pagina)
+        self.entry_elementos.pack(side=tk.RIGHT, padx=6)
+        self.entry_elementos.bind("<<ComboboxSelected>>", lambda e: self.cambiar_elementos_por_pagina())
+
+        # Análisis sintáctico
+        self.tab_analisis = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_analisis, text="Análisis Sintáctico")
+        self.texto_analisis = scrolledtext.ScrolledText(self.tab_analisis, wrap=tk.WORD, height=18)
         self.texto_analisis.pack(fill=tk.BOTH, expand=True)
-        
-        self.frame_simbolos = ttk.Frame(self.notebook)
-        self.notebook.add(self.frame_simbolos, text="Tabla de Símbolos")
-        self.texto_simbolos = scrolledtext.ScrolledText(self.frame_simbolos, wrap=tk.WORD, width=80, height=20)
+
+        # Tabla de símbolos
+        self.tab_simbolos = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_simbolos, text="Tabla de Símbolos")
+        self.texto_simbolos = scrolledtext.ScrolledText(self.tab_simbolos, wrap=tk.WORD, height=12)
         self.texto_simbolos.pack(fill=tk.BOTH, expand=True)
-    
+
+    # -------------------------
+    # Carga y muestra
+    # -------------------------
     def cargar_archivo(self):
-        ruta_archivo = filedialog.askopenfilename(
-            title="Seleccionar archivo",
-            filetypes=[("Archivos Assembly", "*.asm"), ("Todos los archivos", "*.*")]
-        )
-        
-        if ruta_archivo:
-            if self.ensamblador.cargar_archivo(ruta_archivo):
-                self.label_archivo.config(text=f"Archivo: {Path(ruta_archivo).name}")
-                self.mostrar_codigo()
-                self.mostrar_tokens()
-                messagebox.showinfo("Éxito", "Archivo cargado correctamente")
-            else:
-                messagebox.showerror("Error", "No se pudo cargar el archivo")
-    
+        ruta = filedialog.askopenfilename(title="Seleccionar archivo", filetypes=[("ASM", "*.asm"), ("Todos", "*.*")])
+        if not ruta:
+            return
+        ok = self.ensamblador.cargar_archivo(ruta)
+        if ok:
+            self.label_archivo.config(text=f"Archivo: {Path(ruta).name}")
+            self.mostrar_codigo()
+            self.mostrar_tokens()
+            messagebox.showinfo("Listo", "Archivo cargado correctamente")
+        else:
+            messagebox.showerror("Error", "No se pudo cargar el archivo")
+
     def mostrar_codigo(self):
         self.texto_codigo.delete(1.0, tk.END)
-        for i, linea in enumerate(self.ensamblador.lineas_codigo, 1):
-            self.texto_codigo.insert(tk.END, f"{i:4d} | {linea}")
-    
+        for i, ln in enumerate(self.ensamblador.lineas_codigo, 1):
+            self.texto_codigo.insert(tk.END, f"{i:04d} | {ln}\n")
+
     def mostrar_tokens(self):
         self.pagina_actual = 0
         self.actualizar_pagina_tokens()
-    
+
     def actualizar_pagina_tokens(self):
         self.texto_tokens.delete(1.0, tk.END)
-        
         inicio = self.pagina_actual * self.elementos_por_pagina
         fin = min(inicio + self.elementos_por_pagina, len(self.ensamblador.tokens))
-        
-        self.texto_tokens.insert(tk.END, f"{'Núm.':<6} {'Token':<25} {'Tipo':<30} {'Línea':<6}\n")
-        self.texto_tokens.insert(tk.END, "=" * 80 + "\n")
-        
+
+        self.texto_tokens.insert(tk.END, f"{'Núm.':<6} {'Token':<30} {'Tipo':<30} {'Línea':<6}\n")
+        self.texto_tokens.insert(tk.END, "=" * 100 + "\n")
         for i in range(inicio, fin):
-            token = self.ensamblador.tokens[i]
-            self.texto_tokens.insert(tk.END, 
-                f"{i+1:<6} {token.valor:<25} {token.tipo.value:<30} {token.linea:<6}\n")
-        
-        total_paginas = (len(self.ensamblador.tokens) + self.elementos_por_pagina - 1) // self.elementos_por_pagina
+            tkobj = self.ensamblador.tokens[i]
+            self.texto_tokens.insert(tk.END, f"{i+1:<6} {tkobj.valor:<30} {tkobj.tipo.value:<30} {tkobj.linea:<6}\n")
+
+        total_paginas = max(1, (len(self.ensamblador.tokens) + self.elementos_por_pagina - 1) // self.elementos_por_pagina)
         self.label_pagina.config(text=f"Página {self.pagina_actual + 1} de {total_paginas}")
-    
+
     def pagina_anterior(self):
         if self.pagina_actual > 0:
             self.pagina_actual -= 1
             self.actualizar_pagina_tokens()
-    
+
     def pagina_siguiente(self):
-        total_paginas = (len(self.ensamblador.tokens) + self.elementos_por_pagina - 1) // self.elementos_por_pagina
+        total_paginas = max(1, (len(self.ensamblador.tokens) + self.elementos_por_pagina - 1) // self.elementos_por_pagina)
         if self.pagina_actual < total_paginas - 1:
             self.pagina_actual += 1
             self.actualizar_pagina_tokens()
-    
+
+    def cambiar_elementos_por_pagina(self):
+        try:
+            v = int(self.entry_elementos.get())
+            self.elementos_por_pagina = v
+            self.pagina_actual = 0
+            self.actualizar_pagina_tokens()
+        except Exception:
+            pass
+
+    # -------------------------
+    # Análisis y salida
+    # -------------------------
     def analizar(self):
         if not self.ensamblador.lineas_codigo:
             messagebox.showwarning("Advertencia", "Primero debe cargar un archivo")
             return
-        
         self.ensamblador.analizar_sintaxis()
         self.mostrar_analisis()
         self.mostrar_tabla_simbolos()
-        messagebox.showinfo("Éxito", "Análisis completado")
-    
+        messagebox.showinfo("Listo", "Análisis completado")
+
     def mostrar_analisis(self):
         self.texto_analisis.delete(1.0, tk.END)
-        
-        self.texto_analisis.insert(tk.END, f"{'Línea':<6} {'Resultado':<12} {'Descripción':<50}\n")
-        self.texto_analisis.insert(tk.END, "=" * 100 + "\n")
-        
+        self.texto_analisis.insert(tk.END, f"{'Línea':<6} {'Resultado':<12} {'Descripción':<60}\n")
+        self.texto_analisis.insert(tk.END, "=" * 120 + "\n")
+        # Mantenemos el orden en que se analizaron las líneas
         for analisis in self.ensamblador.lineas_analizadas:
-            linea_num = analisis['numero']
-            linea = analisis['linea'][:40]
-            resultado = analisis['resultado']
-            mensaje = analisis['mensaje']
-            
-            self.texto_analisis.insert(tk.END, f"{linea_num:<6} {resultado:<12} {mensaje:<50}\n")
-            self.texto_analisis.insert(tk.END, f"       {linea}\n")
-            self.texto_analisis.insert(tk.END, "-" * 100 + "\n")
-    
+            num = analisis['numero']
+            res = analisis['resultado']
+            msg = analisis['mensaje']
+            linea = analisis['linea']
+            self.texto_analisis.insert(tk.END, f"{num:<6} {res:<12} {msg:<60}\n")
+            if linea.strip() != "":
+                self.texto_analisis.insert(tk.END, f"       {linea}\n")
+            self.texto_analisis.insert(tk.END, "-" * 120 + "\n")
+
     def mostrar_tabla_simbolos(self):
         self.texto_simbolos.delete(1.0, tk.END)
-        
         self.texto_simbolos.insert(tk.END, f"{'Símbolo':<20} {'Tipo':<10} {'Valor':<20} {'Tamaño':<10}\n")
         self.texto_simbolos.insert(tk.END, "=" * 70 + "\n")
-        
         for simbolo in self.ensamblador.tabla_simbolos.values():
-            self.texto_simbolos.insert(tk.END, 
-                f"{simbolo.nombre:<20} {simbolo.tipo:<10} {simbolo.valor:<20} {simbolo.tamanio:<10}\n")
-    
+            self.texto_simbolos.insert(tk.END, f"{simbolo.nombre:<20} {simbolo.tipo:<10} {simbolo.valor:<20} {simbolo.tamanio:<10}\n")
+
+    # -------------------------
+    # Exportar
+    # -------------------------
     def exportar_resultados(self):
-        if not self.ensamblador.tokens:
+        if not (self.ensamblador.tokens or self.ensamblador.lineas_analizadas):
             messagebox.showwarning("Advertencia", "No hay datos para exportar")
             return
-        
-        ruta_archivo = filedialog.asksaveasfilename(
-            defaultextension=".txt",
-            filetypes=[("Archivo de texto", "*.txt"), ("Todos los archivos", "*.*")]
-        )
-        
-        if ruta_archivo:
-            try:
-                with open(ruta_archivo, 'w', encoding='utf-8') as f:
-                    f.write("=" * 80 + "\n")
-                    f.write("ENSAMBLADOR 8086 - RESULTADOS DEL ANÁLISIS\n")
-                    f.write("=" * 80 + "\n\n")
-                    
-                    f.write("TOKENS IDENTIFICADOS\n")
-                    f.write("-" * 80 + "\n")
-                    for i, token in enumerate(self.ensamblador.tokens, 1):
-                        f.write(f"{i:4d}. {token.valor:<25} -> {token.tipo.value}\n")
-                    
-                    if self.ensamblador.lineas_analizadas:
-                        f.write("\n" + "=" * 80 + "\n")
-                        f.write("ANÁLISIS SINTÁCTICO\n")
-                        f.write("-" * 80 + "\n")
-                        for analisis in self.ensamblador.lineas_analizadas:
-                            f.write(f"Línea {analisis['numero']}: {analisis['resultado']}\n")
-                            f.write(f"  {analisis['linea']}\n")
-                            f.write(f"  -> {analisis['mensaje']}\n\n")
-                    
-                    if self.ensamblador.tabla_simbolos:
-                        f.write("\n" + "=" * 80 + "\n")
-                        f.write("TABLA DE SÍMBOLOS\n")
-                        f.write("-" * 80 + "\n")
-                        f.write(f"{'Símbolo':<20} {'Tipo':<10} {'Valor':<20} {'Tamaño':<10}\n")
-                        f.write("-" * 80 + "\n")
-                        for simbolo in self.ensamblador.tabla_simbolos.values():
-                            f.write(f"{simbolo.nombre:<20} {simbolo.tipo:<10} {simbolo.valor:<20} {simbolo.tamanio:<10}\n")
-                
-                messagebox.showinfo("Éxito", "Resultados exportados correctamente")
-            except Exception as e:
-                messagebox.showerror("Error", f"No se pudo exportar: {e}")
 
+        ruta = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("TXT", "*.txt"), ("Todos", "*.*")])
+        if not ruta:
+            return
+
+        try:
+            with open(ruta, 'w', encoding='utf-8') as f:
+                f.write("=" * 80 + "\n")
+                f.write("ENSAMBLADOR 8086 - RESULTADOS DEL ANÁLISIS\n")
+                f.write("=" * 80 + "\n\n")
+
+                f.write("TOKENS IDENTIFICADOS\n")
+                f.write("-" * 80 + "\n")
+                for i, token in enumerate(self.ensamblador.tokens, 1):
+                    f.write(f"{i:4d}. {token.valor:<25} -> {token.tipo.value}\n")
+
+                if self.ensamblador.lineas_analizadas:
+                    f.write("\n" + "=" * 80 + "\n")
+                    f.write("ANÁLISIS SINTÁCTICO\n")
+                    f.write("-" * 80 + "\n")
+                    for analisis in self.ensamblador.lineas_analizadas:
+                        f.write(f"Línea {analisis['numero']}: {analisis['resultado']}\n")
+                        f.write(f"  {analisis['linea']}\n")
+                        f.write(f"  -> {analisis['mensaje']}\n\n")
+
+                if self.ensamblador.tabla_simbolos:
+                    f.write("\n" + "=" * 80 + "\n")
+                    f.write("TABLA DE SÍMBOLOS\n")
+                    f.write("-" * 80 + "\n")
+                    f.write(f"{'Símbolo':<20} {'Tipo':<10} {'Valor':<20} {'Tamaño':<10}\n")
+                    f.write("-" * 80 + "\n")
+                    for simbolo in self.ensamblador.tabla_simbolos.values():
+                        f.write(f"{simbolo.nombre:<20} {simbolo.tipo:<10} {simbolo.valor:<20} {simbolo.tamanio:<10}\n")
+
+            messagebox.showinfo("Listo", "Resultados exportados correctamente")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo exportar: {e}")
+
+# -------------------------
+# main
+# -------------------------
 if __name__ == "__main__":
     root = tk.Tk()
     app = EnsambladorGUI(root)
