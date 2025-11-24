@@ -621,18 +621,16 @@ class EnsambladorGUI:
 
     def mostrar_analisis(self):
         self.texto_analisis.delete(1.0, tk.END)
-        self.texto_analisis.insert(tk.END, f"{'Línea':<6} {'Resultado':<12} {'Descripción':<60}\n")
+        self.texto_analisis.insert(tk.END, f" {'Resultado':<12} {'Descripción':<60}\n")
         self.texto_analisis.insert(tk.END, "=" * 120 + "\n")
         # Mantenemos el orden en que se analizaron las líneas
         for analisis in self.ensamblador.lineas_analizadas:
             num = analisis['numero']
             res = analisis['resultado']
             msg = analisis['mensaje']
-            linea = analisis['linea']
-            self.texto_analisis.insert(tk.END, f"{num:<6} {res:<12} {msg:<60}\n")
-            if linea.strip() != "":
-                self.texto_analisis.insert(tk.END, f"       {linea}\n")
-            self.texto_analisis.insert(tk.END, "-" * 120 + "\n")
+           
+            self.texto_analisis.insert(tk.END, f" {res:<12} {msg:<60}\n")
+            
 
     def mostrar_tabla_simbolos(self):
         self.texto_simbolos.delete(1.0, tk.END)
