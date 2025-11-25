@@ -661,23 +661,32 @@ class Ensamblador8086:
 # -------------------------
 # GUI (Tkinter) - simple y usable
 # -------------------------
-class EnsambladorGUI:
-    def __init__(self, root):
+class VentanaPrincipal:
+    def __init__(self, root, ensamblador):
         self.root = root
-        self.root.title("Ensamblador 8086 - Limpio")
-        self.root.geometry("1100x700")
+        self.root.title("Ensamblador 8086 - Código y Tokens")
+        self.root.geometry("1000x700+100+100")
+        
+        # Hacer la ventana redimensionable
+        self.root.minsize(800, 600)
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
 
-        self.ensamblador = Ensamblador8086()
+        self.ensamblador = ensamblador
+        self.ventana_analisis = None
 
         # Paginación tokens
         self.pagina_actual = 0
         self.elementos_por_pagina = 25
 
         self.crear_interfaz()
+        self.crear_ventana_analisis()
 
     def crear_interfaz(self):
         frame = ttk.Frame(self.root, padding=8)
-        frame.pack(fill=tk.BOTH, expand=True)
+        frame.grid(row=0, column=0, sticky="nsew")
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
 
         # Botones
         botones = ttk.Frame(frame)
@@ -685,50 +694,63 @@ class EnsambladorGUI:
         ttk.Button(botones, text="Cargar Archivo", command=self.cargar_archivo).pack(side=tk.LEFT, padx=4)
         ttk.Button(botones, text="Analizar", command=self.analizar).pack(side=tk.LEFT, padx=4)
         ttk.Button(botones, text="Exportar Resultados", command=self.exportar_resultados).pack(side=tk.LEFT, padx=4)
+        ttk.Button(botones, text="Mostrar Ventana de Análisis", command=self.mostrar_ventana_analisis).pack(side=tk.LEFT, padx=4)
 
         # Etiqueta archivo
         self.label_archivo = ttk.Label(frame, text="Ningún archivo cargado")
         self.label_archivo.pack(anchor=tk.W)
 
-        # Notebook con pestañas
-        self.notebook = ttk.Notebook(frame)
-        self.notebook.pack(fill=tk.BOTH, expand=True, pady=6)
+        # Frame principal dividido en dos
+        frame_principal = ttk.Frame(frame)
+        frame_principal.pack(fill=tk.BOTH, expand=True, pady=6)
+        frame_principal.columnconfigure(0, weight=1)
+        frame_principal.columnconfigure(1, weight=1)
+        frame_principal.rowconfigure(0, weight=1)
 
-        # Código
-        self.tab_codigo = ttk.Frame(self.notebook)
-        self.notebook.add(self.tab_codigo, text="Código Fuente")
-        self.texto_codigo = scrolledtext.ScrolledText(self.tab_codigo, wrap=tk.WORD, height=18)
-        self.texto_codigo.pack(fill=tk.BOTH, expand=True)
+        # Frame izquierdo - Código fuente
+        frame_codigo = ttk.LabelFrame(frame_principal, text="Código Fuente", padding=5)
+        frame_codigo.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        frame_codigo.columnconfigure(0, weight=1)
+        frame_codigo.rowconfigure(0, weight=1)
+        
+        # Texto para código fuente - SIN SCROLL
+        self.texto_codigo = tk.Text(frame_codigo, wrap=tk.WORD, height=20)
+        self.texto_codigo.grid(row=0, column=0, sticky="nsew")
 
-        # Tokens (con paginación)
-        self.tab_tokens = ttk.Frame(self.notebook)
-        self.notebook.add(self.tab_tokens, text="Tokens Identificados")
-        self.texto_tokens = scrolledtext.ScrolledText(self.tab_tokens, wrap=tk.WORD, height=16)
-        self.texto_tokens.pack(fill=tk.BOTH, expand=True)
+        # Frame derecho - Tokens
+        frame_tokens = ttk.LabelFrame(frame_principal, text="Tokens Identificados", padding=5)
+        frame_tokens.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+        frame_tokens.columnconfigure(0, weight=1)
+        frame_tokens.rowconfigure(0, weight=1)
 
-        pag_frame = ttk.Frame(self.tab_tokens)
-        pag_frame.pack(fill=tk.X, pady=4)
-        ttk.Button(pag_frame, text="← Anterior", command=self.pagina_anterior).pack(side=tk.LEFT, padx=2)
+        # Texto para tokens - SIN SCROLL
+        self.texto_tokens = tk.Text(frame_tokens, wrap=tk.WORD, height=20)
+        self.texto_tokens.grid(row=0, column=0, sticky="nsew")
+
+        # Controles de paginación para tokens
+        pag_frame = ttk.Frame(frame_tokens)
+        pag_frame.grid(row=1, column=0, sticky="ew", pady=4)
+        pag_frame.columnconfigure(1, weight=1)
+        
+        ttk.Button(pag_frame, text="← Anterior", command=self.pagina_anterior).grid(row=0, column=0, padx=2)
         self.label_pagina = ttk.Label(pag_frame, text="Página 1")
-        self.label_pagina.pack(side=tk.LEFT, padx=6)
-        ttk.Button(pag_frame, text="Siguiente →", command=self.pagina_siguiente).pack(side=tk.LEFT, padx=2)
-        ttk.Label(pag_frame, text="Elementos/pág:").pack(side=tk.RIGHT)
+        self.label_pagina.grid(row=0, column=1, padx=6)
+        ttk.Button(pag_frame, text="Siguiente →", command=self.pagina_siguiente).grid(row=0, column=2, padx=2)
+        
+        ttk.Label(pag_frame, text="Elementos/pág:").grid(row=0, column=3, padx=(20, 0))
         self.entry_elementos = ttk.Combobox(pag_frame, values=[10, 20, 25, 50], width=4, state="readonly")
         self.entry_elementos.set(self.elementos_por_pagina)
-        self.entry_elementos.pack(side=tk.RIGHT, padx=6)
+        self.entry_elementos.grid(row=0, column=4, padx=6)
         self.entry_elementos.bind("<<ComboboxSelected>>", lambda e: self.cambiar_elementos_por_pagina())
 
-        # Análisis sintáctico
-        self.tab_analisis = ttk.Frame(self.notebook)
-        self.notebook.add(self.tab_analisis, text="Análisis Sintáctico")
-        self.texto_analisis = scrolledtext.ScrolledText(self.tab_analisis, wrap=tk.WORD, height=18)
-        self.texto_analisis.pack(fill=tk.BOTH, expand=True)
-
-        # Tabla de símbolos
-        self.tab_simbolos = ttk.Frame(self.notebook)
-        self.notebook.add(self.tab_simbolos, text="Tabla de Símbolos")
-        self.texto_simbolos = scrolledtext.ScrolledText(self.tab_simbolos, wrap=tk.WORD, height=12)
-        self.texto_simbolos.pack(fill=tk.BOTH, expand=True)
+    def crear_ventana_analisis(self):
+        """Crea la ventana de análisis al mismo tiempo que la principal"""
+        self.ventana_analisis = VentanaAnalisis(self.ensamblador)
+        
+    def mostrar_ventana_analisis(self):
+        """Muestra la ventana de análisis"""
+        if self.ventana_analisis:
+            self.ventana_analisis.mostrar()
 
     # -------------------------
     # Carga y muestra
@@ -760,11 +782,11 @@ class EnsambladorGUI:
         inicio = self.pagina_actual * self.elementos_por_pagina
         fin = min(inicio + self.elementos_por_pagina, len(self.ensamblador.tokens))
 
-        self.texto_tokens.insert(tk.END, f"{'Núm.':<6} {'Token':<30} {'Tipo':<30} {'Línea':<6}\n")
-        self.texto_tokens.insert(tk.END, "=" * 100 + "\n")
+        self.texto_tokens.insert(tk.END, f"{'Núm.':<6} {'Token':<35} {'Tipo':<35}\n")
+        self.texto_tokens.insert(tk.END, "=" * 80 + "\n")
         for i in range(inicio, fin):
             tkobj = self.ensamblador.tokens[i]
-            self.texto_tokens.insert(tk.END, f"{i+1:<6} {tkobj.valor:<30} {tkobj.tipo.value:<30} {tkobj.linea:<6}\n")
+            self.texto_tokens.insert(tk.END, f"{i+1:<6} {tkobj.valor:<35} {tkobj.tipo.value:<35}\n")
 
         total_paginas = max(1, (len(self.ensamblador.tokens) + self.elementos_por_pagina - 1) // self.elementos_por_pagina)
         self.label_pagina.config(text=f"Página {self.pagina_actual + 1} de {total_paginas}")
@@ -796,30 +818,15 @@ class EnsambladorGUI:
         if not self.ensamblador.lineas_codigo:
             messagebox.showwarning("Advertencia", "Primero debe cargar un archivo")
             return
+        
         self.ensamblador.analizar_sintaxis()
-        self.mostrar_analisis()
-        self.mostrar_tabla_simbolos()
+        
+        # Actualizar ventana de análisis si existe
+        if self.ventana_analisis:
+            self.ventana_analisis.actualizar_analisis()
+            self.ventana_analisis.mostrar()
+        
         messagebox.showinfo("Listo", "Análisis completado")
-
-    def mostrar_analisis(self):
-        self.texto_analisis.delete(1.0, tk.END)
-        self.texto_analisis.insert(tk.END, f"{'Línea':<6} {'Resultado':<12} {'Descripción':<60}\n")
-        self.texto_analisis.insert(tk.END, "=" * 120 + "\n")
-        # Mantenemos el orden en que se analizaron las líneas
-        for analisis in self.ensamblador.lineas_analizadas:
-            num = analisis['numero']
-            res = analisis['resultado']
-            msg = analisis['mensaje']
-            
-            self.texto_analisis.insert(tk.END, f"{num:<6} {res:<12} {msg:<60}\n")
-            
-
-    def mostrar_tabla_simbolos(self):
-        self.texto_simbolos.delete(1.0, tk.END)
-        self.texto_simbolos.insert(tk.END, f"{'Símbolo':<20} {'Tipo':<10} {'Valor':<20} {'Tamaño':<10}\n")
-        self.texto_simbolos.insert(tk.END, "=" * 70 + "\n")
-        for simbolo in self.ensamblador.tabla_simbolos.values():
-            self.texto_simbolos.insert(tk.END, f"{simbolo.nombre:<20} {simbolo.tipo:<10} {simbolo.valor:<20} {simbolo.tamanio:<10}\n")
 
     # -------------------------
     # Exportar
@@ -867,9 +874,196 @@ class EnsambladorGUI:
             messagebox.showerror("Error", f"No se pudo exportar: {e}")
 
 # -------------------------
+# Ventana de Análisis (Separada)
+# -------------------------
+class VentanaAnalisis:
+    def __init__(self, ensamblador):
+        self.ensamblador = ensamblador
+        self.ventana = tk.Toplevel()
+        self.ventana.title("Ensamblador 8086 - Análisis y Símbolos")
+        self.ventana.geometry("900x600+950+100")
+        
+        # Hacer la ventana redimensionable
+        self.ventana.minsize(700, 500)
+        self.ventana.columnconfigure(0, weight=1)
+        self.ventana.rowconfigure(0, weight=1)
+        
+        # Paginación
+        self.pagina_actual_analisis = 0
+        self.pagina_actual_simbolos = 0
+        self.elementos_por_pagina_analisis = 20
+        self.elementos_por_pagina_simbolos = 20
+        
+        self.crear_interfaz()
+        self.actualizar_analisis()
+    
+    def crear_interfaz(self):
+        frame = ttk.Frame(self.ventana, padding=8)
+        frame.grid(row=0, column=0, sticky="nsew")
+        self.ventana.columnconfigure(0, weight=1)
+        self.ventana.rowconfigure(0, weight=1)
+        
+        # Notebook con pestañas para análisis y símbolos
+        self.notebook = ttk.Notebook(frame)
+        self.notebook.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        
+        # Pestaña de análisis sintáctico
+        self.tab_analisis = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_analisis, text="Análisis Sintáctico")
+        self.tab_analisis.columnconfigure(0, weight=1)
+        self.tab_analisis.rowconfigure(0, weight=1)
+        self.tab_analisis.rowconfigure(1, weight=0)
+        
+        # Texto para análisis sintáctico - SIN SCROLL
+        self.texto_analisis = tk.Text(self.tab_analisis, wrap=tk.WORD, height=20)
+        self.texto_analisis.grid(row=0, column=0, sticky="nsew")
+        
+        # Controles de paginación para análisis
+        frame_paginacion_analisis = ttk.Frame(self.tab_analisis)
+        frame_paginacion_analisis.grid(row=1, column=0, sticky="ew", pady=4)
+        frame_paginacion_analisis.columnconfigure(1, weight=1)
+        
+        ttk.Button(frame_paginacion_analisis, text="← Anterior", 
+                  command=self.pagina_anterior_analisis).grid(row=0, column=0, padx=2)
+        self.label_pagina_analisis = ttk.Label(frame_paginacion_analisis, text="Página 1")
+        self.label_pagina_analisis.grid(row=0, column=1, padx=6)
+        ttk.Button(frame_paginacion_analisis, text="Siguiente →", 
+                  command=self.pagina_siguiente_analisis).grid(row=0, column=2, padx=2)
+        
+        ttk.Label(frame_paginacion_analisis, text="Elementos/pág:").grid(row=0, column=3, padx=(20, 0))
+        self.entry_elementos_analisis = ttk.Combobox(frame_paginacion_analisis, values=[10, 15, 20, 25, 30], width=4, state="readonly")
+        self.entry_elementos_analisis.set(self.elementos_por_pagina_analisis)
+        self.entry_elementos_analisis.grid(row=0, column=4, padx=6)
+        self.entry_elementos_analisis.bind("<<ComboboxSelected>>", lambda e: self.cambiar_elementos_por_pagina_analisis())
+        
+        # Pestaña de tabla de símbolos
+        self.tab_simbolos = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_simbolos, text="Tabla de Símbolos")
+        self.tab_simbolos.columnconfigure(0, weight=1)
+        self.tab_simbolos.rowconfigure(0, weight=1)
+        self.tab_simbolos.rowconfigure(1, weight=0)
+        
+        # Texto para tabla de símbolos - SIN SCROLL
+        self.texto_simbolos = tk.Text(self.tab_simbolos, wrap=tk.WORD, height=20)
+        self.texto_simbolos.grid(row=0, column=0, sticky="nsew")
+        
+        # Controles de paginación para símbolos
+        frame_paginacion_simbolos = ttk.Frame(self.tab_simbolos)
+        frame_paginacion_simbolos.grid(row=1, column=0, sticky="ew", pady=4)
+        frame_paginacion_simbolos.columnconfigure(1, weight=1)
+        
+        ttk.Button(frame_paginacion_simbolos, text="← Anterior", 
+                  command=self.pagina_anterior_simbolos).grid(row=0, column=0, padx=2)
+        self.label_pagina_simbolos = ttk.Label(frame_paginacion_simbolos, text="Página 1")
+        self.label_pagina_simbolos.grid(row=0, column=1, padx=6)
+        ttk.Button(frame_paginacion_simbolos, text="Siguiente →", 
+                  command=self.pagina_siguiente_simbolos).grid(row=0, column=2, padx=2)
+        
+        ttk.Label(frame_paginacion_simbolos, text="Elementos/pág:").grid(row=0, column=3, padx=(20, 0))
+        self.entry_elementos_simbolos = ttk.Combobox(frame_paginacion_simbolos, values=[10, 15, 20, 25, 30], width=4, state="readonly")
+        self.entry_elementos_simbolos.set(self.elementos_por_pagina_simbolos)
+        self.entry_elementos_simbolos.grid(row=0, column=4, padx=6)
+        self.entry_elementos_simbolos.bind("<<ComboboxSelected>>", lambda e: self.cambiar_elementos_por_pagina_simbolos())
+    
+    def actualizar_analisis(self):
+        self.pagina_actual_analisis = 0
+        self.pagina_actual_simbolos = 0
+        self.mostrar_analisis()
+        self.mostrar_tabla_simbolos()
+    
+    def mostrar_analisis(self):
+        self.texto_analisis.delete(1.0, tk.END)
+        if not hasattr(self.ensamblador, 'lineas_analizadas') or not self.ensamblador.lineas_analizadas:
+            self.texto_analisis.insert(tk.END, "Cargue un archivo y realice el análisis para ver los resultados.\n")
+            return
+            
+        inicio = self.pagina_actual_analisis * self.elementos_por_pagina_analisis
+        fin = min(inicio + self.elementos_por_pagina_analisis, len(self.ensamblador.lineas_analizadas))
+        
+        self.texto_analisis.insert(tk.END, f" {'Resultado':<12} {'Descripción':<60}\n")
+        self.texto_analisis.insert(tk.END, "=" * 120 + "\n")
+        for i in range(inicio, fin):
+            analisis = self.ensamblador.lineas_analizadas[i]
+            res = analisis['resultado']
+            msg = analisis['mensaje']
+            self.texto_analisis.insert(tk.END, f" {res:<12} {msg:<60}\n")
+            
+        total_paginas = max(1, (len(self.ensamblador.lineas_analizadas) + self.elementos_por_pagina_analisis - 1) // self.elementos_por_pagina_analisis)
+        self.label_pagina_analisis.config(text=f"Página {self.pagina_actual_analisis + 1} de {total_paginas}")
+    
+    def mostrar_tabla_simbolos(self):
+        self.texto_simbolos.delete(1.0, tk.END)
+        if not hasattr(self.ensamblador, 'tabla_simbolos') or not self.ensamblador.tabla_simbolos:
+            self.texto_simbolos.insert(tk.END, "Cargue un archivo y realice el análisis para ver la tabla de símbolos.\n")
+            return
+            
+        simbolos = list(self.ensamblador.tabla_simbolos.values())
+        inicio = self.pagina_actual_simbolos * self.elementos_por_pagina_simbolos
+        fin = min(inicio + self.elementos_por_pagina_simbolos, len(simbolos))
+        
+        self.texto_simbolos.insert(tk.END, f"{'Símbolo':<20} {'Tipo':<10} {'Valor':<20} {'Tamaño':<10}\n")
+        self.texto_simbolos.insert(tk.END, "=" * 70 + "\n")
+        for i in range(inicio, fin):
+            simbolo = simbolos[i]
+            self.texto_simbolos.insert(tk.END, f"{simbolo.nombre:<20} {simbolo.tipo:<10} {simbolo.valor:<20} {simbolo.tamanio:<10}\n")
+            
+        total_paginas = max(1, (len(simbolos) + self.elementos_por_pagina_simbolos - 1) // self.elementos_por_pagina_simbolos)
+        self.label_pagina_simbolos.config(text=f"Página {self.pagina_actual_simbolos + 1} de {total_paginas}")
+    
+    def pagina_anterior_analisis(self):
+        if self.pagina_actual_analisis > 0:
+            self.pagina_actual_analisis -= 1
+            self.mostrar_analisis()
+
+    def pagina_siguiente_analisis(self):
+        total_paginas = max(1, (len(self.ensamblador.lineas_analizadas) + self.elementos_por_pagina_analisis - 1) // self.elementos_por_pagina_analisis)
+        if self.pagina_actual_analisis < total_paginas - 1:
+            self.pagina_actual_analisis += 1
+            self.mostrar_analisis()
+
+    def pagina_anterior_simbolos(self):
+        if self.pagina_actual_simbolos > 0:
+            self.pagina_actual_simbolos -= 1
+            self.mostrar_tabla_simbolos()
+
+    def pagina_siguiente_simbolos(self):
+        simbolos = list(self.ensamblador.tabla_simbolos.values())
+        total_paginas = max(1, (len(simbolos) + self.elementos_por_pagina_simbolos - 1) // self.elementos_por_pagina_simbolos)
+        if self.pagina_actual_simbolos < total_paginas - 1:
+            self.pagina_actual_simbolos += 1
+            self.mostrar_tabla_simbolos()
+    
+    def cambiar_elementos_por_pagina_analisis(self):
+        try:
+            v = int(self.entry_elementos_analisis.get())
+            self.elementos_por_pagina_analisis = v
+            self.pagina_actual_analisis = 0
+            self.mostrar_analisis()
+        except Exception:
+            pass
+            
+    def cambiar_elementos_por_pagina_simbolos(self):
+        try:
+            v = int(self.entry_elementos_simbolos.get())
+            self.elementos_por_pagina_simbolos = v
+            self.pagina_actual_simbolos = 0
+            self.mostrar_tabla_simbolos()
+        except Exception:
+            pass
+    
+    def mostrar(self):
+        """Trae la ventana al frente"""
+        self.ventana.lift()
+        self.ventana.focus_force()
+        self.ventana.deiconify()  # Asegura que la ventana sea visible
+
+# -------------------------
 # main
 # -------------------------
 if __name__ == "__main__":
     root = tk.Tk()
-    app = EnsambladorGUI(root)
+    ensamblador = Ensamblador8086()
+    app = VentanaPrincipal(root, ensamblador)
     root.mainloop()
