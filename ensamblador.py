@@ -176,7 +176,7 @@ class Ensamblador8086:
 
         # Tokenización robusta que respeta el orden:
         token_pattern = re.compile(
-            r'(ETIQ_[0-9]+|COMP_[A-Z_]+_[0-9]+|\"[^\"]*\"|\'[^\']*\'|\[[^\]]+\]|[A-Za-z_][A-Za-z0-9_]*:|[A-Za-z_][A-Za-z0-9_]*|[0-9A-F]+H|[01]+B|\d+|[,:\[\]\(\)\+\-\*/%])',
+            r'(ETIQ_[0-9]+|COMP_[A-Z_]+_[0-9]+|\"[^\"]*\"|\'[^\']*\'|\[[^\]]+\]|[A-Za-z_][A-Za-z0-9_]*:|[A-Za-z_][A-Za-z0-9_]*|0[0-9A-F]+H|[01]+B|\d+|[,:\[\]\(\)\+\-\*/%])',
             re.IGNORECASE
         )
 
@@ -245,7 +245,7 @@ class Ensamblador8086:
         if tu in self.registros:
             return TipoToken.REGISTRO
 
-        # Constantes numéricas
+        # Constantes
         if re.match(r'^0[0-9A-F]+H$', tu):
             return TipoToken.CONSTANTE_HEXADECIMAL
         if re.match(r'^[01]+[Bb]$', t):
