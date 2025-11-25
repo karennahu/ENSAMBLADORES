@@ -148,11 +148,21 @@ class Ensamblador8086:
     # -------------------------
     def tokenizar_linea(self, linea: str, num_linea: int) -> List[Token]:
         """
-        Tokeniza una línea sin reordenarla. Maneja strings, corchetes, etiquetas, marcadores.
+        Tokeniza una línea y detecta elementos inválidos como strings sin cerrar
         """
         linea_sin_com = self.limpiar_comentarios(linea).strip()
         if not linea_sin_com:
             return []
+
+        # VALIDACIÓN PREVIA: Detectar strings mal formados ANTES de tokenizar
+        if self.tiene_string_invalido(linea_sin_com):
+            # Retornar toda la línea como un solo token NO_IDENTIFICADO
+            return [Token(
+                valor=linea_sin_com,
+                tipo=TipoToken.NO_IDENTIFICADO,
+                linea=num_linea,
+                posicion=0
+            )]
 
         texto_modificado, elementos_compuestos = self.extraer_elementos_compuestos(linea_sin_com)
 
@@ -188,16 +198,32 @@ class Ensamblador8086:
         for pos, token_str in enumerate(tokens_limpios):
             tipo = self.identificar_tipo_token(token_str)
             tokens.append(Token(token_str, tipo, num_linea, pos))
+        
         return tokens
 
-    # -------------------------
-    # Identificación de tipo de token
-    # -------------------------
+
     def identificar_tipo_token(self, token: str) -> TipoToken:
+        """
+        Identifica el tipo de token con validaciones mejoradas
+        """
         t = token.strip()
         tu = t.upper()
 
-        # Elementos compuestos
+        # VALIDACIÓN 1: Strings mal formados (comillas sin cerrar)
+        if (t.startswith('"') and not t.endswith('"')) or \
+        (t.startswith("'") and not t.endswith("'")):
+            return TipoToken.NO_IDENTIFICADO
+        
+        # VALIDACIÓN 2: Corchetes sin cerrar
+        if (t.startswith('[') and not t.endswith(']')) or \
+        (not t.startswith('[') and t.endswith(']')):
+            return TipoToken.NO_IDENTIFICADO
+        
+        # VALIDACIÓN 3: Paréntesis sin cerrar
+        if t.count('(') != t.count(')'):
+            return TipoToken.NO_IDENTIFICADO
+
+        # Elementos compuestos válidos
         if re.match(r'^\.(?:CODE|DATA|STACK)\s+SEGMENT$', t, re.IGNORECASE):
             return TipoToken.ELEMENTO_COMPUESTO
         if re.match(r'^(?:BYTE|WORD)\s+PTR$', t, re.IGNORECASE):
@@ -206,11 +232,12 @@ class Ensamblador8086:
             return TipoToken.ELEMENTO_COMPUESTO
         if re.match(r'^\[[^\]]+\]$', t):
             return TipoToken.ELEMENTO_COMPUESTO
-        if re.match(r'^"[^"]*"$', t) or re.match(r"'[^']*'$", t):
+        
+        # Strings y caracteres válidos (con comillas cerradas correctamente)
+        if (re.match(r'^"[^"]*"$', t) or re.match(r"^'[^']*'$", t)):
             return TipoToken.CONSTANTE_CARACTER
 
         # Instrucción / pseudoinstrucción / registro
-        # Nota: sólo se marca INSTRUCCION si está en self.instrucciones
         if tu in self.instrucciones:
             return TipoToken.INSTRUCCION
         if tu in self.pseudoinstrucciones:
@@ -218,20 +245,55 @@ class Ensamblador8086:
         if tu in self.registros:
             return TipoToken.REGISTRO
 
-        # Constantes
-        if re.match(r'^[0-9A-F]+H$', tu):
+        # Constantes numéricas
+        if re.match(r'^0[0-9A-F]+H$', tu):
             return TipoToken.CONSTANTE_HEXADECIMAL
-        if re.match(r'^[01]+B$', tu):
+        if re.match(r'^[01]+[Bb]$', t):
             return TipoToken.CONSTANTE_BINARIA
         if re.match(r'^\d+$', t):
             return TipoToken.CONSTANTE_DECIMAL
 
-        # Simbolos/etiquetas
-        if re.match(r'^\.[A-Za-z_]+$', tu) or re.match(r'^[A-Za-z_][A-Za-z0-9_]*:$', t) or re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', t):
+        # VALIDACIÓN 4: Números con formato inválido
+        if re.match(r'^\d+[A-Z]+$', tu) and not re.match(r'^[0-9A-F]+H$', tu):
+            return TipoToken.NO_IDENTIFICADO
+
+        # Símbolos/etiquetas válidos
+        if re.match(r'^\.[A-Za-z_]+$', tu) or \
+        re.match(r'^[A-Za-z_][A-Za-z0-9_]*:$', t) or \
+        re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', t):
             return TipoToken.SIMBOLO
 
-        # Por defecto
+        # VALIDACIÓN 5: Caracteres especiales inválidos
+        if re.search(r'[@#%&!~`]', t):
+            return TipoToken.NO_IDENTIFICADO
+
+        # Por defecto: no identificado
         return TipoToken.NO_IDENTIFICADO
+
+
+    def tiene_string_invalido(self, linea: str) -> bool:
+        """
+        Detecta si una línea tiene un string mal formado
+        """
+        # Buscar comillas sin cerrar
+        comillas_dobles = [i for i, c in enumerate(linea) if c == '"']
+        comillas_simples = [i for i, c in enumerate(linea) if c == "'"]
+        
+        # Si hay número impar de comillas, está mal formado
+        if len(comillas_dobles) % 2 != 0:
+            return True
+        if len(comillas_simples) % 2 != 0:
+            return True
+        
+        # Verificar corchetes balanceados
+        if linea.count('[') != linea.count(']'):
+            return True
+        
+        # Verificar paréntesis balanceados
+        if linea.count('(') != linea.count(')'):
+            return True
+        
+        return False
 
     # -------------------------
     # NUEVO: Validar instrucción explícitamente
@@ -275,59 +337,73 @@ class Ensamblador8086:
     # -------------------------
     # Análisis sintáctico (mantiene orden)
     # -------------------------
+
     def analizar_sintaxis(self):
-        self.lineas_analizadas = []
-        self.tabla_simbolos = {}
-        segmento_actual = None
+            self.lineas_analizadas = []
+            self.tabla_simbolos = {}
+            segmento_actual = None
 
-        for i, linea_raw in enumerate(self.lineas_codigo):
-            linea = linea_raw.strip()
-            linea_limpia = self.limpiar_comentarios(linea).strip()
-            if not linea_limpia:
-                # conservar el orden: guardar línea vacía como correcta
+            for i, linea_raw in enumerate(self.lineas_codigo):
+                linea = linea_raw.strip()
+                
+                if not linea:
+                    continue
+                if linea.startswith(';'):
+                    continue
+                
+                linea_limpia = self.limpiar_comentarios(linea).strip()
+                if not linea_limpia:
+                    continue
+
+                tokens_linea = self.tokenizar_linea(linea_limpia, i + 1)
+                if not tokens_linea:
+                    continue
+
+                primer_token = tokens_linea[0].valor.upper()
+
+                # Detectar segmento actual
+                if '.STACK SEGMENT' in linea_limpia.upper():
+                    segmento_actual = 'STACK'
+                elif '.DATA SEGMENT' in linea_limpia.upper():
+                    segmento_actual = 'DATA'
+                elif '.CODE SEGMENT' in linea_limpia.upper():
+                    segmento_actual = 'CODE'
+                elif primer_token == 'ENDS':
+                    segmento_actual = None
+
+                # ✅ AGREGAR ETIQUETAS A LA TABLA DE SÍMBOLOS
+                if tokens_linea[0].tipo == TipoToken.SIMBOLO and tokens_linea[0].valor.endswith(':'):
+                    nombre_etiqueta = tokens_linea[0].valor.replace(':', '')
+                    
+                    # Crear objeto Simbolo para la etiqueta
+                    self.tabla_simbolos[nombre_etiqueta] = Simbolo(
+                        nombre=nombre_etiqueta,
+                        tipo='Etiqueta',
+                        valor='',  # Las etiquetas no tienen valor
+                        tamanio=''  # Las etiquetas no tienen tamaño
+                    )
+
+                # Validar línea
+                resultado, mensaje = self.validar_linea(tokens_linea, segmento_actual)
+
+                # Agregar símbolos de DATA (variables y constantes)
+                if segmento_actual == 'DATA' and len(tokens_linea) >= 3 and tokens_linea[0].tipo == TipoToken.SIMBOLO:
+                    self.agregar_simbolo(tokens_linea)
+
+                # Limpiar mensajes
+                mensaje = re.sub(
+                    r"meacheaning|auto_generated|AI:|This was generated:",
+                    "",
+                    str(mensaje),
+                    flags=re.IGNORECASE
+                ).strip()
+
                 self.lineas_analizadas.append({
                     'numero': i + 1,
                     'linea': linea_limpia,
-                    'resultado': "Correcta",
-                    'mensaje': "Línea vacía"
+                    'resultado': resultado,
+                    'mensaje': mensaje
                 })
-                continue
-
-            tokens_linea = self.tokenizar_linea(linea_limpia, i + 1)
-            if not tokens_linea:
-                self.lineas_analizadas.append({
-                    'numero': i + 1,
-                    'linea': linea_limpia,
-                    'resultado': "Correcta",
-                    'mensaje': "Sin tokens"
-                })
-                continue
-
-            primer_token = tokens_linea[0].valor.upper()
-            if '.STACK SEGMENT' in linea_limpia.upper():
-                segmento_actual = 'STACK'
-            elif '.DATA SEGMENT' in linea_limpia.upper():
-                segmento_actual = 'DATA'
-            elif '.CODE SEGMENT' in linea_limpia.upper():
-                segmento_actual = 'CODE'
-            elif primer_token == 'ENDS':
-                segmento_actual = None
-
-            resultado, mensaje = self.validar_linea(tokens_linea, segmento_actual)
-
-            # Si es definición en DATA, agregar símbolo
-            if segmento_actual == 'DATA' and len(tokens_linea) >= 3 and tokens_linea[0].tipo == TipoToken.SIMBOLO:
-                self.agregar_simbolo(tokens_linea)
-
-            # Normalizar mensaje (quitar residuos)
-            mensaje = re.sub(r"meacheaning|auto_generated|AI:|This was generated:", "", str(mensaje), flags=re.IGNORECASE).strip()
-
-            self.lineas_analizadas.append({
-                'numero': i + 1,
-                'linea': linea_limpia,
-                'resultado': resultado,
-                'mensaje': mensaje
-            })
 
     # -------------------------
     # Validaciones por segmento
@@ -335,7 +411,7 @@ class Ensamblador8086:
     def validar_linea(self, tokens: List[Token], segmento: Optional[str]) -> Tuple[str, str]:
         # Comportamiento simple: detecta segmentos, end, pseudoinstr e instrucciones
         if not tokens:
-            return "Correcta", "Línea vacía"
+            return "Incorrecta", "Línea vacía"
 
         linea_texto = ' '.join([t.valor for t in tokens])
 
@@ -359,7 +435,7 @@ class Ensamblador8086:
             return self.validar_segmento_codigo(tokens)
 
         # Si no sabemos, marcar correcta (evita mover/romper)
-        return "Correcta", "Línea válida"
+        return "Incorrecta", "Línea No Valida"
 
     def validar_segmento_pila(self, tokens: List[Token]) -> Tuple[str, str]:
         if len(tokens) < 2:
@@ -369,13 +445,87 @@ class Ensamblador8086:
         return "Correcta", "Elemento de pila"
 
     def validar_segmento_datos(self, tokens: List[Token]) -> Tuple[str, str]:
+        """
+        Valida líneas en el segmento DATA con verificaciones estrictas
+        """
+        # Verificar cantidad mínima de tokens
         if len(tokens) < 3:
             return "Incorrecta", "Definición de datos incompleta"
+        
+        # El primer token debe ser un símbolo (nombre de variable)
         if tokens[0].tipo != TipoToken.SIMBOLO:
-            return "Incorrecta", "Debe iniciar con un símbolo"
+            return "Incorrecta", "Debe iniciar con un símbolo válido"
+        
+        # El segundo token debe ser una directiva válida
         directiva = tokens[1].valor.upper()
-        if directiva not in ['DB', 'DW', 'EQU']:
+        if directiva not in ['DB', 'DW','EQU']:
             return "Incorrecta", f"Directiva inválida: {directiva}"
+        
+        # Validar el valor (tercer token en adelante)
+        valor_tokens = tokens[2:]
+        
+        # Reconstruir la línea original para validaciones adicionales
+        linea_completa = ' '.join([t.valor for t in tokens])
+        
+        # VALIDACIÓN 1: Verificar comillas sin cerrar en strings
+        if '"' in linea_completa:
+            # Contar comillas dobles
+            count_comillas = linea_completa.count('"')
+            if count_comillas % 2 != 0:
+                return "Incorrecta", "Cadena de texto sin cerrar (falta comilla de cierre)"
+        
+        # VALIDACIÓN 2: Verificar comillas simples sin cerrar
+        if "'" in linea_completa:
+            # Contar comillas simples
+            count_comillas_simples = linea_completa.count("'")
+            if count_comillas_simples % 2 != 0:
+                return "Incorrecta", "Constante de caracter sin cerrar (falta comilla de cierre)"
+        
+        # VALIDACIÓN 3: Verificar corchetes balanceados
+        if '[' in linea_completa or ']' in linea_completa:
+            if linea_completa.count('[') != linea_completa.count(']'):
+                return "Incorrecta", "Corchetes no balanceados"
+        
+        # VALIDACIÓN 4: Verificar paréntesis balanceados (para DUP)
+        if '(' in linea_completa or ')' in linea_completa:
+            if linea_completa.count('(') != linea_completa.count(')'):
+                return "Incorrecta", "Paréntesis no balanceados"
+        
+        # VALIDACIÓN 5: Si usa DUP, verificar formato correcto
+        if 'DUP' in linea_completa.upper():
+            # Formato esperado: cantidad DUP(valor)
+            if not re.search(r'\d+\s+DUP\s*\([^)]+\)', linea_completa, re.IGNORECASE):
+                return "Incorrecta", "Formato de DUP incorrecto (debe ser: cantidad DUP(valor))"
+        
+        # VALIDACIÓN 6: Verificar que el valor no esté vacío
+        if not valor_tokens or all(t.valor.strip() == '' for t in valor_tokens):
+            return "Incorrecta", "Falta el valor de inicialización"
+        
+        # VALIDACIÓN 7: Para DB y DW, verificar tipos de datos válidos
+        if directiva in ['DB', 'DW']:
+            valor_str = ' '.join([t.valor for t in valor_tokens])
+            
+            # Si es un string, verificar que esté correctamente formateado
+            if valor_str.startswith('"') or valor_str.startswith("'"):
+                # Ya se validó arriba que las comillas estén cerradas
+                pass
+            # Si es un número, verificar formato
+            elif re.match(r'^\d+$', valor_str.strip()):
+                pass  # Número decimal válido
+            elif re.match(r'^[0-9A-F]+H$', valor_str.strip().upper()):
+                pass  # Número hexadecimal válido
+            elif re.match(r'^[01]+B$', valor_str.strip().upper()):
+                pass  # Número binario válido
+            elif 'DUP' in valor_str.upper():
+                pass  # Ya se validó arriba
+            elif '?' in valor_str:
+                pass  # Variable sin inicializar (válido)
+            else:
+                # Verificar si hay caracteres inválidos
+                if re.search(r'[^\w\s,\[\]\(\)\+\-\*\$\?"\']', valor_str):
+                    return "Incorrecta", "Valor contiene caracteres inválidos"
+        
+        # Si pasó todas las validaciones
         return "Correcta", "Definición de dato válida"
 
     def validar_segmento_codigo(self, tokens: List[Token]) -> Tuple[str, str]:
@@ -451,20 +601,52 @@ class Ensamblador8086:
     # -------------------------
     # Agregar símbolo simple
     # -------------------------
-    def agregar_simbolo(self, tokens: List[Token]):
-        if len(tokens) < 3:
-            return
-        nombre = tokens[0].valor
-        directiva = tokens[1].valor.upper()
-        valor = tokens[2].valor if len(tokens) > 2 else ""
-        tamanio = 0
-        if directiva == 'DB':
-            tamanio = 1
-        elif directiva == 'DW':
-            tamanio = 2
-        elif directiva == 'EQU':
-            tamanio = 0
-        self.tabla_simbolos[nombre] = Simbolo(nombre, directiva, valor, tamanio)
+    def agregar_simbolo(self, tokens_linea: List[Token]):
+        """
+        Construye la tabla de símbolos con el formato solicitado:
+        tipo: Variable | Constante | Etiqueta
+        tamaño: DB | DW | ""
+        valor: hexadecimales terminados en H, o el valor indicado. Las etiquetas no tienen valor.
+        """
+
+        nombre = tokens_linea[0].valor.rstrip(":")  # Quitar dos puntos si es etiqueta
+
+        # 1) IDENTIFICAR TIPO
+        if tokens_linea[0].valor.endswith(":"):
+            tipo = "Etiqueta"
+            tamanio = ""
+            valor = ""
+        else:
+            directiva = tokens_linea[1].valor.upper()
+
+            if directiva == "EQU":
+                tipo = "Constante"
+                tamanio = ""
+            else:
+                tipo = "Variable"
+
+            # Tamaño: DB / DW si aplica
+            tamanio = directiva if directiva in ("DB", "DW") else ""
+
+            # Valor: tomar todo lo que está después
+            raw_valor = " ".join(tok.valor for tok in tokens_linea[2:])
+
+            # ✅ Detectar hexadecimal válido (DEBE empezar con 0)
+            if re.match(r'^0[0-9A-F]+H$', raw_valor.upper()):
+                valor = raw_valor.upper()
+            # ✅ Detectar binario válido (termina en B o b)
+            elif re.match(r'^[01]+[Bb]$', raw_valor):
+                valor = raw_valor.upper()
+            else:
+                valor = raw_valor
+
+        # Guardar en tabla de símbolos
+        self.tabla_simbolos[nombre] = Simbolo(
+            nombre=nombre,
+            tipo=tipo,
+            valor=valor,
+            tamanio=tamanio
+        )
 
     # -------------------------
     # Paginador (útil si quieres exportar o mostrar en UI por páginas)
@@ -621,15 +803,15 @@ class EnsambladorGUI:
 
     def mostrar_analisis(self):
         self.texto_analisis.delete(1.0, tk.END)
-        self.texto_analisis.insert(tk.END, f" {'Resultado':<12} {'Descripción':<60}\n")
+        self.texto_analisis.insert(tk.END, f"{'Línea':<6} {'Resultado':<12} {'Descripción':<60}\n")
         self.texto_analisis.insert(tk.END, "=" * 120 + "\n")
         # Mantenemos el orden en que se analizaron las líneas
         for analisis in self.ensamblador.lineas_analizadas:
             num = analisis['numero']
             res = analisis['resultado']
             msg = analisis['mensaje']
-           
-            self.texto_analisis.insert(tk.END, f" {res:<12} {msg:<60}\n")
+            
+            self.texto_analisis.insert(tk.END, f"{num:<6} {res:<12} {msg:<60}\n")
             
 
     def mostrar_tabla_simbolos(self):
