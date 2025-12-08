@@ -47,7 +47,8 @@ class Ensamblador8086:
 
         self.pseudoinstrucciones = {
             'SEGMENT', 'ENDS', 'END', 'DB', 'DW', 'DD', 'DQ', 'DT',
-            'EQU', 'PROC', 'ENDP', 'ASSUME', 'ORG'
+            'EQU', 'DUP', 'BYTE', 'PTR', 'WORD', 'MACRO', 'ENDM', 
+            'PROC', 'ENDP', 'ASSUME', 'ORG'
         }
 
         self.registros = {
@@ -84,7 +85,7 @@ class Ensamblador8086:
             (r'\.stack\s+segment', 'COMP_STACK_SEG'),
             (r'byte\s+ptr', 'COMP_BYTE_PTR'),
             (r'word\s+ptr', 'COMP_WORD_PTR'),
-            (r'dup\s*\([^)]+\)', 'COMP_DUP'),
+            (r'dup\s*\([^)]*\)', 'COMP_DUP'),  # DUP(valor) - captura DUP con paréntesis
             (r'\[[^\]]+\]', 'COMP_BRACKET'),
             (r'"[^"]*"', 'COMP_STRING'),
             (r"'[^']*'", 'COMP_CHAR'),
@@ -95,7 +96,7 @@ class Ensamblador8086:
                 elem = match.group(0)
                 marcador = f'{prefijo}_{contador}'
                 elementos.append((marcador, elem))
-                texto_mod = texto_mod[:match.start()] + marcador + texto_mod[match.end():]
+                texto_mod = texto_mod[:match.start()] + ' ' + marcador + ' ' + texto_mod[match.end():]
                 contador += 1
         return texto_mod, elementos
 
@@ -153,7 +154,13 @@ class Ensamblador8086:
 
         token_pattern = re.compile(
             r'(ETIQ_[0-9]+|COMP_[A-Z_]+_[0-9]+|\"[^\"]*\"|\'[^\']*\'|\[[^\]]+\]|'
-            r'[A-Za-z_][A-Za-z0-9_]*:|[A-Za-z_][A-Za-z0-9_]*|0[0-9A-F]+H|[01]+B|\d+|[,:\[\]\(\)\+\-\*/%])',
+            r'[A-Za-z_][A-Za-z0-9_]*:|'  # Etiquetas con :
+            r'0[0-9A-Fa-f]*[Hh]|'  # Hexadecimal (empieza con 0, termina con H)
+            r'[01]+[Bb]|'  # Binario (empieza con 0 o 1, termina con B)
+            r'\.[A-Za-z_][A-Za-z0-9_]*|'  # Directivas .DATA, .CODE, etc
+            r'[A-Za-z_][A-Za-z0-9_]*|'  # Identificadores
+            r'\d+|'  # Números decimales
+            r'[,:\[\]\(\)\+\-\*/%])',  # Operadores y símbolos
             re.IGNORECASE
         )
 
@@ -172,50 +179,114 @@ class Ensamblador8086:
         return tokens
 
     def identificar_tipo_token(self, token: str) -> TipoToken:
+        """
+        Identifica el tipo de token según las reglas del ensamblador 8086:
+        - Pseudoinstrucciones: .data segment, .stack segment, .code segment, ends, db, dw, equ, dup, byte ptr, word ptr, macro, endm, proc, endp
+        - Símbolos: variables, constantes, etiquetas, procedimientos, macros (alfanumérico, máx 10 caracteres)
+        - Etiquetas: terminan con dos puntos (ejemplo: etiqueta1:)
+        - Constantes binarias: empiezan con 0 y terminan con b (ejemplo: 010101b)
+        - Constantes decimales: solo números (ejemplo: 234)
+        - Constantes hexadecimales: empiezan con 0 y terminan con h (ejemplo: 0AF23h)
+        """
         t = token.strip()
         tu = t.upper()
-
-        if (t.startswith('"') and not t.endswith('"')) or (t.startswith("'") and not t.endswith("'")):
-            return TipoToken.NO_IDENTIFICADO
-        if (t.startswith('[') and not t.endswith(']')) or (not t.startswith('[') and t.endswith(']')):
-            return TipoToken.NO_IDENTIFICADO
-        if t.count('(') != t.count(')'):
+        
+        # Si está vacío
+        if not t:
             return TipoToken.NO_IDENTIFICADO
 
+        # ===== ELEMENTOS COMPUESTOS =====
+        # .data segment, .stack segment, .code segment
         if re.match(r'^\.(?:CODE|DATA|STACK)\s+SEGMENT$', t, re.IGNORECASE):
-            return TipoToken.ELEMENTO_COMPUESTO
+            return TipoToken.PSEUDOINSTRUCCION
+        # byte ptr, word ptr
         if re.match(r'^(?:BYTE|WORD)\s+PTR$', t, re.IGNORECASE):
-            return TipoToken.ELEMENTO_COMPUESTO
-        if re.match(r'^DUP\s*\([^)]+\)$', t, re.IGNORECASE):
-            return TipoToken.ELEMENTO_COMPUESTO
+            return TipoToken.PSEUDOINSTRUCCION
+        # DUP(valor) - ejemplo: DUP(0) o DUP(?)
+        if re.match(r'^DUP\s*\([^)]*\)$', t, re.IGNORECASE):
+            return TipoToken.PSEUDOINSTRUCCION
+        # Direccionamiento con corchetes [BX], [SI+2], etc.
         if re.match(r'^\[[^\]]+\]$', t):
             return TipoToken.ELEMENTO_COMPUESTO
+
+        # ===== CONSTANTES DE CARACTER (strings) =====
+        # Strings entre comillas dobles o simples
         if re.match(r'^"[^"]*"$', t) or re.match(r"^'[^']*'$", t):
             return TipoToken.CONSTANTE_CARACTER
+        
+        # Verificar strings mal formados (comillas sin cerrar)
+        if (t.startswith('"') and not t.endswith('"')) or \
+           (t.startswith("'") and not t.endswith("'")):
+            return TipoToken.NO_IDENTIFICADO
 
+        # ===== INSTRUCCIONES =====
         if tu in self.instrucciones:
             return TipoToken.INSTRUCCION
+
+        # ===== PSEUDOINSTRUCCIONES =====
         if tu in self.pseudoinstrucciones:
             return TipoToken.PSEUDOINSTRUCCION
+
+        # ===== REGISTROS =====
         if tu in self.registros:
             return TipoToken.REGISTRO
 
-        if re.match(r'^0[0-9A-F]+H$', tu):
-            return TipoToken.CONSTANTE_HEXADECIMAL
+        # ===== CONSTANTES NUMÉRICAS =====
+        
+        # CONSTANTE BINARIA: empieza con 0 o 1 y termina con B
+        # Ejemplos válidos: 0b, 1b, 010101b, 0B, 010101B
         if re.match(r'^[01]+[Bb]$', t):
             return TipoToken.CONSTANTE_BINARIA
+        
+        # CONSTANTE HEXADECIMAL: empieza con dígito (0-9) y termina con H
+        # Según el estándar 8086, debe empezar con dígito para no confundirse con símbolos
+        # Ejemplos válidos: 0h, 0Ah, 0ABCDh, 00FFh, 21h, 0AF23h
+        # Ejemplos inválidos: ABCDh, FFh (empiezan con letra, se confunden con símbolos)
+        if re.match(r'^[0-9][0-9A-Fa-f]*[Hh]$', t):
+            return TipoToken.CONSTANTE_HEXADECIMAL
+        
+        # Hexadecimal inválido: empieza con letra (ej: AFh, FFh) - ERROR
+        # Estos se confunden con símbolos y son inválidos en ensamblador
+        if re.match(r'^[A-Fa-f][0-9A-Fa-f]*[Hh]$', t):
+            return TipoToken.NO_IDENTIFICADO
+        
+        # CONSTANTE DECIMAL: solo dígitos
+        # Ejemplos válidos: 0, 123, 234, 65535
         if re.match(r'^\d+$', t):
             return TipoToken.CONSTANTE_DECIMAL
-        if re.match(r'^\d+[A-Z]+$', tu) and not re.match(r'^[0-9A-F]+H$', tu):
+        
+        # Número con sufijo inválido (ej: 123X, 45G)
+        if re.match(r'^\d+[A-Za-z]+$', t) and not re.match(r'^0[0-9A-Fa-f]*[Hh]$', t) and not re.match(r'^[01]+[Bb]$', t):
             return TipoToken.NO_IDENTIFICADO
 
-        if re.match(r'^\.[A-Za-z_]+$', tu) or re.match(r'^[A-Za-z_][A-Za-z0-9_]*:$', t) or \
-           re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', t):
-            return TipoToken.SIMBOLO
-
-        if re.search(r'[@#%&!~`]', t):
+        # ===== ETIQUETAS (terminan con :) =====
+        # Deben empezar con letra o _, seguido de alfanuméricos o _, máximo 10 caracteres (sin contar :)
+        if t.endswith(':'):
+            nombre = t[:-1]  # Quitar los dos puntos
+            if len(nombre) > 10:
+                return TipoToken.NO_IDENTIFICADO
+            if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', nombre):
+                return TipoToken.SIMBOLO
             return TipoToken.NO_IDENTIFICADO
 
+        # ===== SÍMBOLOS (variables, constantes, procedimientos, macros) =====
+        # Empiezan con letra o _, máximo 10 caracteres, alfanuméricos y _
+        # También puede empezar con . (directivas como .DATA, .CODE, .STACK)
+        if re.match(r'^\.[A-Za-z_][A-Za-z0-9_]*$', t):
+            if len(t) <= 11:  # 10 + el punto
+                return TipoToken.SIMBOLO
+            return TipoToken.NO_IDENTIFICADO
+        
+        if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', t):
+            if len(t) <= 10:
+                return TipoToken.SIMBOLO
+            return TipoToken.NO_IDENTIFICADO
+
+        # ===== OPERADORES Y SÍMBOLOS ESPECIALES =====
+        if t in [',', ':', '+', '-', '*', '/', '[', ']', '(', ')']:
+            return TipoToken.ELEMENTO_COMPUESTO
+
+        # ===== NO IDENTIFICADO =====
         return TipoToken.NO_IDENTIFICADO
 
     def validar_instruccion(self, instr_texto: str) -> Tuple[bool, str]:
