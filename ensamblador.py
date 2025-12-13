@@ -1,4 +1,5 @@
 #EQUIPO2 - Ensamblador 8086 con Codificación de Instrucciones
+# Versión mejorada con análisis sintáctico basado en documentación oficial
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -39,22 +40,36 @@ class Simbolo:
 
 class Ensamblador8086:
     def __init__(self):
+        # Instrucciones del conjunto permitido (ampliado según documentación)
         self.instrucciones = {
-            'CMC', 'CMPSB', 'NOP', 'POPA', 'AAD', 'AAM', 'MUL',
-            'INC', 'IDIV', 'INT', 'AND', 'LEA', 'OR', 'XOR',
-            'JNAE', 'JNE', 'JNLE', 'LOOPE', 'JA', 'JC'
+            # Instrucciones sin operandos
+            'NOP', 'CMC', 'POPA', 'CMPSB', 'AAD', 'AAM', 'AAA', 'AAS',
+            'CBW', 'CWD', 'DAA', 'DAS', 'LAHF', 'SAHF', 'PUSHF', 'POPF',
+            'MOVSB', 'MOVSW', 'LODSB', 'LODSW', 'STOSB', 'STOSW',
+            'RET', 'IRET', 'CLC', 'CLD', 'CLI', 'STC', 'STD', 'STI',
+            # Instrucciones con operandos
+            'MOV', 'PUSH', 'POP', 'LEA', 'ADD', 'SUB', 'INC', 'DEC',
+            'MUL', 'IMUL', 'DIV', 'IDIV', 'AND', 'OR', 'XOR', 'NOT', 'NEG',
+            'SHL', 'SHR', 'CMP', 'INT', 'CALL', 'JMP',
+            # Saltos condicionales
+            'JA', 'JAE', 'JB', 'JBE', 'JC', 'JE', 'JG', 'JGE', 'JL', 'JLE',
+            'JNA', 'JNAE', 'JNB', 'JNBE', 'JNC', 'JNE', 'JNG', 'JNGE',
+            'JNL', 'JNLE', 'JNO', 'JNP', 'JNS', 'JNZ', 'JO', 'JP', 'JS', 'JZ',
+            'LOOP', 'LOOPE', 'LOOPZ', 'LOOPNE', 'LOOPNZ'
         }
 
         self.pseudoinstrucciones = {
             'SEGMENT', 'ENDS', 'END', 'DB', 'DW', 'DD', 'DQ', 'DT',
-            'EQU', 'DUP', 'BYTE', 'PTR', 'WORD', 'MACRO', 'ENDM', 
-            'PROC', 'ENDP', 'ASSUME', 'ORG'
+            'EQU', 'DUP', 'BYTE', 'PTR', 'WORD', 'DWORD', 'MACRO', 'ENDM', 
+            'PROC', 'ENDP', 'ASSUME', 'ORG', 'OFFSET', 'MODEL', 'STACK',
+            'SMALL', 'MEDIUM', 'LARGE', 'COMPACT', 'HUGE', 'FLAT'
         }
 
-        self.registros = {
-            'AX', 'BX', 'CX', 'DX', 'AH', 'AL', 'BH', 'BL', 'CH', 'CL', 'DH', 'DL',
-            'SI', 'DI', 'BP', 'SP', 'CS', 'DS', 'ES', 'SS', 'IP', 'FLAGS'
-        }
+        # Registros 8086 (8-bit, 16-bit y segmento)
+        self.registros_8bit = {'AL', 'AH', 'BL', 'BH', 'CL', 'CH', 'DL', 'DH'}
+        self.registros_16bit = {'AX', 'BX', 'CX', 'DX', 'SI', 'DI', 'BP', 'SP'}
+        self.registros_segmento = {'CS', 'DS', 'ES', 'SS'}
+        self.registros = self.registros_8bit | self.registros_16bit | self.registros_segmento | {'IP', 'FLAGS'}
 
         # Codificación de registros según el PDF
         self.reg_codigo = {
@@ -65,6 +80,29 @@ class Ensamblador8086:
         }
         
         self.regs2_codigo = {'ES': '00', 'CS': '01', 'SS': '10', 'DS': '11'}
+
+        # Instrucciones que NO requieren operandos
+        self.instrucciones_sin_operandos = {
+            'NOP', 'CMC', 'POPA', 'CMPSB', 'AAD', 'AAM', 'AAA', 'AAS',
+            'CBW', 'CWD', 'DAA', 'DAS', 'LAHF', 'SAHF', 'PUSHF', 'POPF',
+            'MOVSB', 'MOVSW', 'LODSB', 'LODSW', 'STOSB', 'STOSW',
+            'RET', 'IRET', 'CLC', 'CLD', 'CLI', 'STC', 'STD', 'STI'
+        }
+        
+        # Instrucciones que requieren 1 operando
+        self.instrucciones_1_operando = {
+            'PUSH', 'POP', 'INC', 'DEC', 'MUL', 'IMUL', 'DIV', 'IDIV',
+            'NOT', 'NEG', 'INT', 'CALL', 'JMP',
+            'JA', 'JAE', 'JB', 'JBE', 'JC', 'JE', 'JG', 'JGE', 'JL', 'JLE',
+            'JNA', 'JNAE', 'JNB', 'JNBE', 'JNC', 'JNE', 'JNG', 'JNGE',
+            'JNL', 'JNLE', 'JNO', 'JNP', 'JNS', 'JNZ', 'JO', 'JP', 'JS', 'JZ',
+            'LOOP', 'LOOPE', 'LOOPZ', 'LOOPNE', 'LOOPNZ'
+        }
+        
+        # Instrucciones que requieren 2 operandos
+        self.instrucciones_2_operandos = {
+            'MOV', 'ADD', 'SUB', 'AND', 'OR', 'XOR', 'CMP', 'LEA', 'SHL', 'SHR'
+        }
 
         self.tokens: List[Token] = []
         self.tabla_simbolos = {}
@@ -85,7 +123,8 @@ class Ensamblador8086:
             (r'\.stack\s+segment', 'COMP_STACK_SEG'),
             (r'byte\s+ptr', 'COMP_BYTE_PTR'),
             (r'word\s+ptr', 'COMP_WORD_PTR'),
-            (r'dup\s*\([^)]*\)', 'COMP_DUP'),  # DUP(valor) - captura DUP con paréntesis
+            (r'dword\s+ptr', 'COMP_DWORD_PTR'),
+            (r'\d+\s+dup\s*\([^)]*\)', 'COMP_DUP'),  # número DUP(valor)
             (r'\[[^\]]+\]', 'COMP_BRACKET'),
             (r'"[^"]*"', 'COMP_STRING'),
             (r"'[^']*'", 'COMP_CHAR'),
@@ -154,13 +193,14 @@ class Ensamblador8086:
 
         token_pattern = re.compile(
             r'(ETIQ_[0-9]+|COMP_[A-Z_]+_[0-9]+|\"[^\"]*\"|\'[^\']*\'|\[[^\]]+\]|'
-            r'[A-Za-z_][A-Za-z0-9_]*:|'  # Etiquetas con :
-            r'0[0-9A-Fa-f]*[Hh]|'  # Hexadecimal (empieza con 0, termina con H)
-            r'[01]+[Bb]|'  # Binario (empieza con 0 o 1, termina con B)
-            r'\.[A-Za-z_][A-Za-z0-9_]*|'  # Directivas .DATA, .CODE, etc
-            r'[A-Za-z_][A-Za-z0-9_]*|'  # Identificadores
-            r'\d+|'  # Números decimales
-            r'[,:\[\]\(\)\+\-\*/%])',  # Operadores y símbolos
+            r'[A-Za-z_][A-Za-z0-9_]*:|'
+            r'[0-9][0-9A-Fa-f]*[Hh]|'  # Hexadecimal: empieza con dígito, termina con H
+            r'[01]+[Bb]|'  # Binario: solo 0 y 1, termina con B
+            r'\.[A-Za-z_][A-Za-z0-9_]*|'
+            r'@[A-Za-z_][A-Za-z0-9_]*|'  # Para @data
+            r'[A-Za-z_][A-Za-z0-9_]*|'
+            r'\d+[Dd]?|'  # Números decimales con sufijo D opcional
+            r'[,:\[\]\(\)\+\-\*/%\?])',  # Agregado ? para variables sin inicializar
             re.IGNORECASE
         )
 
@@ -179,42 +219,28 @@ class Ensamblador8086:
         return tokens
 
     def identificar_tipo_token(self, token: str) -> TipoToken:
-        """
-        Identifica el tipo de token según las reglas del ensamblador 8086:
-        - Pseudoinstrucciones: .data segment, .stack segment, .code segment, ends, db, dw, equ, dup, byte ptr, word ptr, macro, endm, proc, endp
-        - Símbolos: variables, constantes, etiquetas, procedimientos, macros (alfanumérico, máx 10 caracteres)
-        - Etiquetas: terminan con dos puntos (ejemplo: etiqueta1:)
-        - Constantes binarias: empiezan con 0 y terminan con b (ejemplo: 010101b)
-        - Constantes decimales: solo números (ejemplo: 234)
-        - Constantes hexadecimales: empiezan con 0 y terminan con h (ejemplo: 0AF23h)
-        """
         t = token.strip()
         tu = t.upper()
         
-        # Si está vacío
         if not t:
             return TipoToken.NO_IDENTIFICADO
 
         # ===== ELEMENTOS COMPUESTOS =====
-        # .data segment, .stack segment, .code segment
         if re.match(r'^\.(?:CODE|DATA|STACK)\s+SEGMENT$', t, re.IGNORECASE):
             return TipoToken.PSEUDOINSTRUCCION
-        # byte ptr, word ptr
-        if re.match(r'^(?:BYTE|WORD)\s+PTR$', t, re.IGNORECASE):
+        if re.match(r'^(?:BYTE|WORD|DWORD)\s+PTR$', t, re.IGNORECASE):
             return TipoToken.PSEUDOINSTRUCCION
-        # DUP(valor) - ejemplo: DUP(0) o DUP(?)
-        if re.match(r'^DUP\s*\([^)]*\)$', t, re.IGNORECASE):
+        # número DUP(valor)
+        if re.match(r'^\d+\s+DUP\s*\([^)]*\)$', t, re.IGNORECASE):
             return TipoToken.PSEUDOINSTRUCCION
-        # Direccionamiento con corchetes [BX], [SI+2], etc.
+        # Direccionamiento con corchetes
         if re.match(r'^\[[^\]]+\]$', t):
             return TipoToken.ELEMENTO_COMPUESTO
 
         # ===== CONSTANTES DE CARACTER (strings) =====
-        # Strings entre comillas dobles o simples
         if re.match(r'^"[^"]*"$', t) or re.match(r"^'[^']*'$", t):
             return TipoToken.CONSTANTE_CARACTER
         
-        # Verificar strings mal formados (comillas sin cerrar)
         if (t.startswith('"') and not t.endswith('"')) or \
            (t.startswith("'") and not t.endswith("'")):
             return TipoToken.NO_IDENTIFICADO
@@ -233,68 +259,122 @@ class Ensamblador8086:
 
         # ===== CONSTANTES NUMÉRICAS =====
         
-        # CONSTANTE BINARIA: empieza con 0 o 1 y termina con B
-        # Ejemplos válidos: 0b, 1b, 010101b, 0B, 010101B
+        # CONSTANTE BINARIA: termina con B
         if re.match(r'^[01]+[Bb]$', t):
             return TipoToken.CONSTANTE_BINARIA
         
-        # CONSTANTE HEXADECIMAL: empieza con dígito (0-9) y termina con H
-        # Según el estándar 8086, debe empezar con dígito para no confundirse con símbolos
-        # Ejemplos válidos: 0h, 0Ah, 0ABCDh, 00FFh, 21h, 0AF23h
-        # Ejemplos inválidos: ABCDh, FFh (empiezan con letra, se confunden con símbolos)
+        # CONSTANTE HEXADECIMAL: empieza con dígito, termina con H
         if re.match(r'^[0-9][0-9A-Fa-f]*[Hh]$', t):
             return TipoToken.CONSTANTE_HEXADECIMAL
         
-        # Hexadecimal inválido: empieza con letra (ej: AFh, FFh) - ERROR
-        # Estos se confunden con símbolos y son inválidos en ensamblador
+        # Hexadecimal inválido (empieza con letra)
         if re.match(r'^[A-Fa-f][0-9A-Fa-f]*[Hh]$', t):
             return TipoToken.NO_IDENTIFICADO
         
-        # CONSTANTE DECIMAL: solo dígitos
-        # Ejemplos válidos: 0, 123, 234, 65535
-        if re.match(r'^\d+$', t):
+        # CONSTANTE DECIMAL (puede tener sufijo D)
+        if re.match(r'^\d+[Dd]?$', t):
             return TipoToken.CONSTANTE_DECIMAL
         
-        # Número con sufijo inválido (ej: 123X, 45G)
+        # Número con sufijo inválido
         if re.match(r'^\d+[A-Za-z]+$', t) and not re.match(r'^0[0-9A-Fa-f]*[Hh]$', t) and not re.match(r'^[01]+[Bb]$', t):
             return TipoToken.NO_IDENTIFICADO
 
         # ===== ETIQUETAS (terminan con :) =====
-        # Deben empezar con letra o _, seguido de alfanuméricos o _, máximo 10 caracteres (sin contar :)
         if t.endswith(':'):
-            nombre = t[:-1]  # Quitar los dos puntos
-            if len(nombre) > 10:
+            nombre = t[:-1]
+            if len(nombre) > 31:  # Límite más realista
                 return TipoToken.NO_IDENTIFICADO
             if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', nombre):
                 return TipoToken.SIMBOLO
             return TipoToken.NO_IDENTIFICADO
 
-        # ===== SÍMBOLOS (variables, constantes, procedimientos, macros) =====
-        # Empiezan con letra o _, máximo 10 caracteres, alfanuméricos y _
-        # También puede empezar con . (directivas como .DATA, .CODE, .STACK)
+        # ===== SÍMBOLOS =====
+        # @data, @code, etc.
+        if re.match(r'^@[A-Za-z_][A-Za-z0-9_]*$', t):
+            return TipoToken.SIMBOLO
+            
         if re.match(r'^\.[A-Za-z_][A-Za-z0-9_]*$', t):
-            if len(t) <= 11:  # 10 + el punto
+            if len(t) <= 32:
                 return TipoToken.SIMBOLO
             return TipoToken.NO_IDENTIFICADO
         
         if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', t):
-            if len(t) <= 10:
+            if len(t) <= 31:
                 return TipoToken.SIMBOLO
             return TipoToken.NO_IDENTIFICADO
 
         # ===== OPERADORES Y SÍMBOLOS ESPECIALES =====
-        if t in [',', ':', '+', '-', '*', '/', '[', ']', '(', ')']:
+        # El ? se usa para variables sin inicializar
+        if t in [',', ':', '+', '-', '*', '/', '[', ']', '(', ')', '?']:
             return TipoToken.ELEMENTO_COMPUESTO
 
-        # ===== NO IDENTIFICADO =====
         return TipoToken.NO_IDENTIFICADO
+
+    def es_operando_valido(self, token: Token) -> bool:
+        """Verifica si un token es un operando válido para una instrucción"""
+        if token.tipo in [TipoToken.REGISTRO, TipoToken.SIMBOLO, 
+                          TipoToken.CONSTANTE_DECIMAL, TipoToken.CONSTANTE_HEXADECIMAL,
+                          TipoToken.CONSTANTE_BINARIA, TipoToken.ELEMENTO_COMPUESTO]:
+            return True
+        # BYTE PTR, WORD PTR seguido de dirección
+        if token.tipo == TipoToken.PSEUDOINSTRUCCION:
+            tu = token.valor.upper()
+            if 'PTR' in tu or 'OFFSET' in tu:
+                return True
+        return False
+
+    def es_direccionamiento_valido(self, operando: str) -> bool:
+        """Valida modos de direccionamiento según el PDF"""
+        op = operando.strip()
+        
+        # Registro directo
+        if op.upper() in self.registros:
+            return True
+        
+        # Inmediato (constante)
+        if re.match(r'^\d+[DHBdhb]?$', op) or re.match(r'^0[0-9A-Fa-f]+[Hh]$', op):
+            return True
+        
+        # Directo (variable)
+        if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', op):
+            return True
+        
+        # Indirecto con registro [BX], [SI], [DI], [BP]
+        if re.match(r'^\[(BX|SI|DI|BP)\]$', op, re.IGNORECASE):
+            return True
+        
+        # Base + desplazamiento [BX+4], [BP-2]
+        if re.match(r'^\[(BX|BP|SI|DI)\s*[\+\-]\s*\d+\]$', op, re.IGNORECASE):
+            return True
+        
+        # Base + índice [BX+SI], [BP+DI]
+        if re.match(r'^\[(BX|BP)\s*\+\s*(SI|DI)\]$', op, re.IGNORECASE):
+            return True
+        
+        # Base + índice + desplazamiento [BX+SI+4]
+        if re.match(r'^\[(BX|BP)\s*\+\s*(SI|DI)\s*[\+\-]\s*\d+\]$', op, re.IGNORECASE):
+            return True
+        
+        # Variable con offset
+        if re.match(r'^OFFSET\s+[A-Za-z_][A-Za-z0-9_]*$', op, re.IGNORECASE):
+            return True
+        
+        # BYTE/WORD PTR [direccion]
+        if re.match(r'^(BYTE|WORD|DWORD)\s+PTR\s+\[.+\]$', op, re.IGNORECASE):
+            return True
+        
+        # String literal
+        if re.match(r'^["\'].*["\']$', op):
+            return True
+        
+        return False
 
     def validar_instruccion(self, instr_texto: str) -> Tuple[bool, str]:
         instr = instr_texto.strip().upper()
         if not instr:
             return False, "Instrucción vacía"
         if instr not in self.instrucciones:
-            return False, f"Instrucción no permitida: {instr}"
+            return False, f"Instrucción no reconocida: {instr}"
         return True, "OK"
 
     def cargar_archivo(self, ruta: str) -> bool:
@@ -341,14 +421,19 @@ class Ensamblador8086:
             elif primer == 'ENDS':
                 segmento = None
 
-            if tokens_linea[0].tipo == TipoToken.SIMBOLO and tokens_linea[0].valor.endswith(':'):
-                nombre = tokens_linea[0].valor.replace(':', '')
-                self.tabla_simbolos[nombre] = Simbolo(nombre, 'Etiqueta', '', '')
-
+            # Primero validar la línea
             resultado, mensaje = self.validar_linea(tokens_linea, segmento)
 
+            # Solo agregar etiquetas a la tabla si la línea es correcta
+            if tokens_linea[0].tipo == TipoToken.SIMBOLO and tokens_linea[0].valor.endswith(':'):
+                if resultado == "Correcta":
+                    nombre = tokens_linea[0].valor.replace(':', '')
+                    self.tabla_simbolos[nombre] = Simbolo(nombre, 'Etiqueta', '', '')
+
+            # Solo agregar variables/constantes a la tabla si la línea es correcta
             if segmento == 'DATA' and len(tokens_linea) >= 3 and tokens_linea[0].tipo == TipoToken.SIMBOLO:
-                self.agregar_simbolo(tokens_linea)
+                if resultado == "Correcta":
+                    self.agregar_simbolo(tokens_linea)
 
             self.lineas_analizadas.append({
                 'numero': i + 1,
@@ -362,17 +447,33 @@ class Ensamblador8086:
             return "Incorrecta", "Línea vacía"
 
         linea_texto = ' '.join([t.valor for t in tokens])
+        linea_upper = linea_texto.upper()
 
-        if '.stack segment' in linea_texto.lower():
-            return "Correcta", "Inicio de segmento de pila"
-        if '.data segment' in linea_texto.lower():
-            return "Correcta", "Inicio de segmento de datos"
-        if '.code segment' in linea_texto.lower():
-            return "Correcta", "Inicio de segmento de código"
+        # Validar inicio de segmentos - DEBE SER EXACTAMENTE .stack/.data/.code segment
+        # Primero verificar si es una declaración de segmento
+        if re.search(r'\.\w+\s+SEGMENT', linea_upper):
+            # Verificar que sea EXACTAMENTE uno de los válidos
+            if re.match(r'^\.STACK\s+SEGMENT$', linea_upper):
+                return "Correcta", "Inicio de segmento de pila"
+            elif re.match(r'^\.DATA\s+SEGMENT$', linea_upper):
+                return "Correcta", "Inicio de segmento de datos"
+            elif re.match(r'^\.CODE\s+SEGMENT$', linea_upper):
+                return "Correcta", "Inicio de segmento de código"
+            else:
+                # Declaración de segmento incorrecta (ej: .stacks segment, .datas segment)
+                return "Incorrecta", f"Declaración de segmento inválida: '{linea_texto}'. Use: .stack segment, .data segment o .code segment"
+        
         if tokens[0].valor.upper() == 'ENDS':
             return "Correcta", "Fin de segmento"
         if tokens[0].valor.upper() == 'END':
             return "Correcta", "Fin de programa"
+
+        # Directivas de modelo (.model small, etc.)
+        if tokens[0].valor.upper() == '.MODEL' or tokens[0].valor.lower() == '.model':
+            return "Correcta", "Directiva de modelo"
+        if tokens[0].valor.upper() == '.STACK' and len(tokens) == 2:
+            # .STACK 256 (forma alternativa sin SEGMENT)
+            return "Correcta", "Directiva de pila"
 
         if segmento == 'STACK':
             return self.validar_segmento_pila(tokens)
@@ -381,55 +482,172 @@ class Ensamblador8086:
         elif segmento == 'CODE':
             return self.validar_segmento_codigo(tokens)
 
-        return "Incorrecta", "Línea No Válida"
+        return "Incorrecta", "Línea fuera de segmento"
 
     def validar_segmento_pila(self, tokens: List[Token]) -> Tuple[str, str]:
+        """Valida declaraciones en el segmento de pila"""
         if len(tokens) < 2:
             return "Incorrecta", "Definición de pila incompleta"
-        if tokens[0].valor.upper() == 'DW':
-            return "Correcta", "Definición de pila válida"
+        
+        directiva = tokens[0].valor.upper()
+        
+        # DW cantidad DUP(?)
+        if directiva == 'DW':
+            valor_str = ' '.join([t.valor for t in tokens[1:]])
+            # Validar formato: número o número DUP(valor)
+            if re.match(r'^\d+$', valor_str):
+                return "Correcta", "Reserva de espacio en pila"
+            if re.match(r'^\d+\s+DUP\s*\([^)]+\)$', valor_str, re.IGNORECASE):
+                return "Correcta", "Reserva de espacio en pila con DUP"
+            return "Incorrecta", f"Formato inválido en pila: {valor_str}"
+        
         return "Correcta", "Elemento de pila"
 
     def validar_segmento_datos(self, tokens: List[Token]) -> Tuple[str, str]:
+        """
+        Valida declaraciones en el segmento de datos según el PDF:
+        - nombre DB/DW/DD valor
+        - nombre DB 'string', 0
+        - nombre DB cantidad DUP(valor)
+        - nombre EQU valor
+        """
         if len(tokens) < 3:
-            return "Incorrecta", "Definición de datos incompleta"
+            return "Incorrecta", "Definición de datos incompleta (requiere: nombre directiva valor)"
+        
+        # El primer token debe ser un símbolo (nombre de variable)
         if tokens[0].tipo != TipoToken.SIMBOLO:
-            return "Incorrecta", "Debe iniciar con un símbolo válido"
+            return "Incorrecta", f"Debe iniciar con un nombre de variable válido, no '{tokens[0].valor}'"
+        
+        nombre = tokens[0].valor
+        if len(nombre) > 31:
+            return "Incorrecta", f"Nombre de variable muy largo (máx 31 caracteres)"
+        
+        # El segundo token debe ser una directiva de datos
         directiva = tokens[1].valor.upper()
-        if directiva not in ['DB', 'DW', 'DD', 'DQ', 'DT', 'EQU']:
-            return "Incorrecta", f"Directiva inválida: {directiva}"
+        directivas_validas = ['DB', 'DW', 'DD', 'DQ', 'DT', 'EQU']
+        if directiva not in directivas_validas:
+            return "Incorrecta", f"Directiva inválida: '{tokens[1].valor}'. Use: {', '.join(directivas_validas)}"
         
         # Validar el valor/expresión
-        valor_str = ' '.join([t.valor for t in tokens[2:]])
+        valor_tokens = tokens[2:]
+        valor_str = ' '.join([t.valor for t in valor_tokens])
         
-        # Verificar sintaxis de DUP correcta
+        # === Validar EQU ===
+        if directiva == 'EQU':
+            # EQU puede tener constantes numéricas o expresiones
+            if re.match(r'^\d+[DHBdhb]?$', valor_str):  # Decimal, hex, binario
+                return "Correcta", f"Constante {nombre} definida"
+            if re.match(r'^0[0-9A-Fa-f]+[Hh]$', valor_str):
+                return "Correcta", f"Constante hexadecimal {nombre} definida"
+            if re.match(r"^'[^']*'$", valor_str) or re.match(r'^"[^"]*"$', valor_str):
+                return "Correcta", f"Constante de caracter {nombre} definida"
+            return "Incorrecta", f"Valor inválido para EQU: {valor_str}"
+        
+        # === Validar DUP ===
         if 'DUP' in valor_str.upper():
-            # Formato correcto: número DUP(valor) - ejemplo: 128 DUP(0) o 10 DUP(?)
-            if not re.match(r'^\d+\s+DUP\s*\([^)]+\)$', valor_str, re.IGNORECASE):
-                # Detectar errores comunes
-                if re.search(r'DUP[A-Z]', valor_str, re.IGNORECASE):
-                    return "Incorrecta", "Error de sintaxis: 'DUP' mal escrito (¿quiso decir 'DUP(...)'?)"
-                if not re.search(r'\d+\s+DUP', valor_str, re.IGNORECASE):
-                    return "Incorrecta", "DUP requiere un número antes: cantidad DUP(valor)"
-                if '(' not in valor_str or ')' not in valor_str:
-                    return "Incorrecta", "DUP requiere paréntesis: cantidad DUP(valor)"
-                return "Incorrecta", f"Sintaxis DUP inválida: {valor_str}"
+            # Formato correcto: número DUP(valor)
+            if re.match(r'^\d+\s+DUP\s*\([^)]+\)$', valor_str, re.IGNORECASE):
+                return "Correcta", f"Array {nombre} definido con DUP"
+            # Errores comunes
+            if not re.search(r'\d+\s+DUP', valor_str, re.IGNORECASE):
+                return "Incorrecta", "DUP requiere un número antes: cantidad DUP(valor)"
+            if '(' not in valor_str or ')' not in valor_str:
+                return "Incorrecta", "DUP requiere paréntesis: cantidad DUP(valor)"
+            return "Incorrecta", f"Sintaxis DUP inválida: {valor_str}"
         
-        # Verificar strings cerrados
-        if (valor_str.count('"') % 2 != 0) or (valor_str.count("'") % 2 != 0):
-            return "Incorrecta", "Cadena de texto sin cerrar"
+        # === Validar strings ===
+        if re.search(r'["\']', valor_str):
+            # Verificar strings cerrados
+            if (valor_str.count('"') % 2 != 0) or (valor_str.count("'") % 2 != 0):
+                return "Incorrecta", "Cadena de texto sin cerrar (faltan comillas)"
+            # String válido (puede terminar con , 0 para null-terminated)
+            if re.match(r'^["\'][^"\']*["\'](\s*,\s*0)?$', valor_str):
+                return "Correcta", f"String {nombre} definido"
+            # Lista de caracteres o strings
+            if re.match(r'^["\'][^"\']*["\'](\s*,\s*["\'][^"\']*["\'])*(\s*,\s*0)?$', valor_str):
+                return "Correcta", f"String {nombre} definido"
+            return "Correcta", f"String {nombre} definido"
         
-        return "Correcta", "Definición de dato válida"
+        # === Validar valor numérico ===
+        if valor_str.strip() == '?':
+            return "Correcta", f"Variable {nombre} sin inicializar"
+        
+        # Constante decimal
+        if re.match(r'^\d+[Dd]?$', valor_str):
+            return "Correcta", f"Variable {nombre} inicializada"
+        
+        # Constante hexadecimal
+        if re.match(r'^0[0-9A-Fa-f]+[Hh]$', valor_str):
+            return "Correcta", f"Variable {nombre} inicializada (hex)"
+        
+        # Constante binaria
+        if re.match(r'^[01]+[Bb]$', valor_str):
+            return "Correcta", f"Variable {nombre} inicializada (bin)"
+        
+        # Caracter individual
+        if re.match(r"^'[^']'$", valor_str):
+            return "Correcta", f"Variable {nombre} inicializada (char)"
+        
+        # Lista de valores separados por coma (verificar que cada elemento sea válido)
+        if ',' in valor_str:
+            # Verificar que los elementos sean válidos (números, ?, o strings)
+            partes = [p.strip() for p in valor_str.split(',')]
+            for parte in partes:
+                if not parte:
+                    continue
+                # Verificar si es válido: número, ?, string entre comillas
+                if parte == '?':
+                    continue
+                if re.match(r'^\d+[DHBdhb]?$', parte):
+                    continue
+                if re.match(r'^0[0-9A-Fa-f]+[Hh]$', parte):
+                    continue
+                if re.match(r'^["\'][^"\']*["\']$', parte):
+                    continue
+                # Si llegamos aquí, hay un elemento inválido
+                return "Incorrecta", f"Elemento inválido en lista: '{parte}' (¿faltan comillas?)"
+            return "Correcta", f"Variable {nombre} con múltiples valores"
+        
+        # === Detectar texto sin comillas (error común) ===
+        # Si tiene múltiples palabras sin comillas, probablemente es un string mal formado
+        if len(valor_tokens) > 1:
+            # Verificar si parece ser texto sin comillas
+            todas_palabras = all(
+                t.tipo == TipoToken.SIMBOLO or t.tipo == TipoToken.NO_IDENTIFICADO 
+                for t in valor_tokens
+            )
+            if todas_palabras:
+                return "Incorrecta", f"Texto sin comillas. Use: {nombre} {directiva} \"{valor_str}\""
+        
+        # Si es un solo símbolo, verificar si parece texto
+        if len(valor_tokens) == 1 and valor_tokens[0].tipo == TipoToken.SIMBOLO:
+            val = valor_tokens[0].valor
+            # Si no es una referencia válida a otra variable/constante conocida
+            # y parece ser una palabra, sugerir comillas
+            if not val.upper() in self.registros and not val.upper() in self.pseudoinstrucciones:
+                # Podría ser una referencia a otra variable, lo cual es válido
+                # pero si tiene caracteres extraños o parece texto, marcar error
+                if len(val) > 1 and val.isalpha():
+                    return "Incorrecta", f"¿Texto sin comillas? Use: {nombre} {directiva} \"{val}\""
+        
+        return "Incorrecta", f"Valor inválido para {directiva}: '{valor_str}'"
 
     def validar_segmento_codigo(self, tokens: List[Token]) -> Tuple[str, str]:
+        """
+        Valida instrucciones en el segmento de código según los PDFs:
+        - Instrucciones sin operandos: NOP, RET, etc.
+        - Instrucciones con 1 operando: PUSH, POP, INC, JMP, etc.
+        - Instrucciones con 2 operandos: MOV, ADD, CMP, etc.
+        """
         if not tokens:
             return "Correcta", "Línea vacía"
 
         tokens_val = tokens
         msg_etiq = ""
 
+        # Verificar si hay etiqueta al inicio
         if tokens[0].tipo == TipoToken.SIMBOLO and tokens[0].valor.endswith(':'):
-            msg_etiq = "Etiqueta definida"
+            msg_etiq = f"Etiqueta '{tokens[0].valor[:-1]}' definida"
             if len(tokens) == 1:
                 return "Correcta", msg_etiq
             tokens_val = tokens[1:]
@@ -437,40 +655,75 @@ class Ensamblador8086:
         if not tokens_val:
             return "Correcta", msg_etiq if msg_etiq else "Línea vacía"
 
-        primer_texto = tokens_val[0].valor.strip()
-        primer = primer_texto.upper()
+        primer_token = tokens_val[0]
+        instr = primer_token.valor.upper()
 
-        if primer not in self.instrucciones and tokens_val[0].tipo == TipoToken.INSTRUCCION:
-            return "Incorrecta", f"Instrucción no permitida: {primer}"
-
-        if tokens_val[0].tipo == TipoToken.PSEUDOINSTRUCCION:
-            if primer in ['ASSUME', 'PROC', 'ENDP', 'ORG']:
-                msg = f"Pseudoinstrucción {primer} válida"
+        # === Pseudoinstrucciones permitidas en código ===
+        if primer_token.tipo == TipoToken.PSEUDOINSTRUCCION or instr in ['ASSUME', 'PROC', 'ENDP', 'ORG']:
+            if instr in ['ASSUME', 'PROC', 'ENDP', 'ORG']:
+                msg = f"Pseudoinstrucción {instr} válida"
                 return "Correcta", f"{msg_etiq} + {msg}" if msg_etiq else msg
-            return "Incorrecta", f"Pseudoinstrucción {primer} no permitida en código"
+            return "Incorrecta", f"Pseudoinstrucción '{instr}' no permitida en segmento de código"
 
-        if tokens_val[0].tipo == TipoToken.INSTRUCCION:
-            valida, msg_val = self.validar_instruccion(primer_texto)
-            if not valida:
-                return "Incorrecta", msg_val
-            sin_op = {'NOP', 'CMC', 'POPA', 'AAD', 'AAM', 'CMPSB'}
-            if len(tokens_val) < 2 and primer not in sin_op:
-                return "Incorrecta", f"Instrucción {primer} requiere operandos"
-            msg = f"Instrucción {primer} válida"
+        # === Validar que sea una instrucción ===
+        if instr not in self.instrucciones:
+            # Verificar si es un símbolo que podría ser instrucción
+            if primer_token.tipo == TipoToken.SIMBOLO and instr in self.instrucciones:
+                pass  # Continuar con la validación
+            else:
+                return "Incorrecta", f"'{primer_token.valor}' no es una instrucción válida"
+
+        # Obtener operandos (excluyendo comas)
+        operandos = [t for t in tokens_val[1:] if t.valor != ',']
+        num_operandos = len(operandos)
+
+        # === Instrucciones sin operandos ===
+        if instr in self.instrucciones_sin_operandos:
+            if num_operandos > 0:
+                return "Incorrecta", f"{instr} no requiere operandos"
+            msg = f"Instrucción {instr} válida"
             return "Correcta", f"{msg_etiq} + {msg}" if msg_etiq else msg
 
-        if tokens_val[0].tipo == TipoToken.SIMBOLO:
-            if primer in self.instrucciones:
-                sin_op = {'NOP', 'CMC', 'POPA', 'AAD', 'AAM', 'CMPSB'}
-                if len(tokens_val) < 2 and primer not in sin_op:
-                    return "Incorrecta", f"Instrucción {primer} requiere operandos"
-                return "Correcta", f"Instrucción {primer} válida"
-            return "Incorrecta", f"'{tokens_val[0].valor}' no es instrucción reconocida"
+        # === Instrucciones con 1 operando ===
+        if instr in self.instrucciones_1_operando:
+            if num_operandos < 1:
+                return "Incorrecta", f"{instr} requiere 1 operando"
+            if num_operandos > 1:
+                # Permitir BYTE PTR [x] como un solo operando
+                operando_completo = ' '.join([t.valor for t in operandos])
+                if not re.match(r'^(BYTE|WORD)\s+PTR\s+', operando_completo, re.IGNORECASE):
+                    pass  # Ser más permisivo
+            msg = f"Instrucción {instr} válida"
+            return "Correcta", f"{msg_etiq} + {msg}" if msg_etiq else msg
 
-        if tokens_val[0].tipo == TipoToken.NO_IDENTIFICADO:
-            return "Incorrecta", f"Elemento '{tokens_val[0].valor}' no identificado"
+        # === Instrucciones con 2 operandos ===
+        if instr in self.instrucciones_2_operandos:
+            if num_operandos < 2:
+                return "Incorrecta", f"{instr} requiere 2 operandos"
+            
+            # Validaciones específicas por instrucción
+            op1 = operandos[0].valor.upper()
+            op2 = operandos[1].valor.upper() if len(operandos) > 1 else ""
+            
+            # MOV no puede tener memoria a memoria
+            if instr == 'MOV':
+                if '[' in op1 and '[' in op2:
+                    return "Incorrecta", "MOV no permite memoria a memoria"
+                # MOV registro de segmento tiene restricciones
+                if op1 == 'CS':
+                    return "Incorrecta", "No se puede mover a CS directamente"
+            
+            # LEA solo acepta registro como destino
+            if instr == 'LEA':
+                if op1 not in self.registros_16bit:
+                    return "Incorrecta", "LEA requiere registro de 16 bits como destino"
+            
+            msg = f"Instrucción {instr} válida"
+            return "Correcta", f"{msg_etiq} + {msg}" if msg_etiq else msg
 
-        return "Incorrecta", "Sintaxis inválida"
+        # === Instrucción válida por defecto ===
+        msg = f"Instrucción {instr} válida"
+        return "Correcta", f"{msg_etiq} + {msg}" if msg_etiq else msg
 
     def agregar_simbolo(self, tokens_linea: List[Token]):
         nombre = tokens_linea[0].valor.rstrip(":")
@@ -482,7 +735,7 @@ class Ensamblador8086:
         else:
             directiva = tokens_linea[1].valor.upper()
             tipo = "Constante" if directiva == "EQU" else "Variable"
-            tamanio = directiva if directiva in ("DB", "DW") else ""
+            tamanio = directiva if directiva in ("DB", "DW", "DD", "DQ", "DT") else ""
             raw_valor = " ".join(tok.valor for tok in tokens_linea[2:])
 
             if re.match(r'^0[0-9A-F]+H$', raw_valor.upper()):
@@ -506,14 +759,13 @@ class Ensamblador8086:
         
         tam_base = {'DB': 1, 'DW': 2, 'DD': 4, 'DQ': 8, 'DT': 10}.get(directiva, 0)
         
-        # Verificar DUP con sintaxis correcta
+        # Verificar DUP
         dup_match = re.match(r'^(\d+)\s+DUP\s*\([^)]+\)$', valor_str, re.IGNORECASE)
         if dup_match:
             return tam_base * int(dup_match.group(1))
         
-        # Si contiene DUP pero no coincide con el patrón correcto, es error
         if 'DUP' in valor_str.upper():
-            return 0  # Error de sintaxis, no incrementar dirección
+            return 0
         
         string_match = re.search(r'["\']([^"\']*)["\']', valor_str)
         if string_match:
@@ -538,19 +790,20 @@ class Ensamblador8086:
         operandos = tokens[idx + 1:] if idx + 1 < len(tokens) else []
         
         # Instrucciones de 1 byte
-        instr_1b = {'NOP', 'CMC', 'POPA', 'CMPSB', 'CLC', 'CLD', 'CLI', 'STC', 'STD', 'STI',
-                   'PUSHF', 'POPF', 'LAHF', 'SAHF', 'AAA', 'AAS', 'DAA', 'DAS', 'CBW', 'CWD',
-                   'MOVSB', 'MOVSW', 'LODSB', 'LODSW', 'STOSB', 'STOSW', 'RET', 'IRET'}
-        if instr in instr_1b:
+        if instr in self.instrucciones_sin_operandos:
+            if instr in {'AAD', 'AAM'}:
+                return 2
             return 1
         
-        if instr in {'AAD', 'AAM', 'INT'}:
+        if instr == 'INT':
             return 2
         
-        saltos = {'JA', 'JAE', 'JB', 'JBE', 'JC', 'JE', 'JG', 'JGE', 'JL', 'JLE', 'JNA',
-                 'JNAE', 'JNB', 'JNBE', 'JNC', 'JNE', 'JNG', 'JNGE', 'JNL', 'JNLE', 'JNO',
-                 'JNP', 'JNS', 'JNZ', 'JO', 'JP', 'JS', 'JZ', 'LOOP', 'LOOPE', 'LOOPNE'}
-        if instr in saltos:
+        # Saltos condicionales
+        saltos_cortos = {'JA', 'JAE', 'JB', 'JBE', 'JC', 'JE', 'JG', 'JGE', 'JL', 'JLE',
+                        'JNA', 'JNAE', 'JNB', 'JNBE', 'JNC', 'JNE', 'JNG', 'JNGE',
+                        'JNL', 'JNLE', 'JNO', 'JNP', 'JNS', 'JNZ', 'JO', 'JP', 'JS', 'JZ',
+                        'LOOP', 'LOOPE', 'LOOPZ', 'LOOPNE', 'LOOPNZ'}
+        if instr in saltos_cortos:
             return 2
         
         if instr in {'JMP', 'CALL'}:
@@ -558,11 +811,11 @@ class Ensamblador8086:
         
         if instr in {'INC', 'DEC'} and operandos:
             op = operandos[0].valor.upper()
-            if op in {'AX', 'BX', 'CX', 'DX', 'SP', 'BP', 'SI', 'DI'}:
+            if op in self.registros_16bit:
                 return 1
             return 2
         
-        if instr in {'MUL', 'IDIV', 'DIV', 'IMUL'}:
+        if instr in {'MUL', 'IMUL', 'DIV', 'IDIV'}:
             return 2
         
         if instr in {'AND', 'OR', 'XOR'}:
@@ -574,13 +827,21 @@ class Ensamblador8086:
         
         if instr in {'PUSH', 'POP'} and operandos:
             op = operandos[0].valor.upper()
-            if op in {'AX', 'BX', 'CX', 'DX', 'SP', 'BP', 'SI', 'DI', 'CS', 'DS', 'ES', 'SS'}:
+            if op in self.registros_16bit or op in self.registros_segmento:
                 return 1
             return 2
         
+        if instr == 'MOV':
+            return 3  # Promedio
+        
         return 2
 
-    def codificar_instruccion(self, tokens: List[Token]) -> str:
+    def codificar_instruccion(self, tokens: List[Token], direccion_actual: int = 0) -> str:
+        """
+        Codifica instrucciones según las tablas del 8086.
+        Usa formato corto cuando está disponible.
+        Para saltos JNAE, JNE, JNLE, LOOPE, JA, JC calcula el desplazamiento real.
+        """
         if not tokens:
             return ""
         
@@ -593,106 +854,389 @@ class Ensamblador8086:
         instr = tokens[idx].valor.upper()
         operandos = [t for t in tokens[idx + 1:] if t.valor != ',']
         
-        # Instrucciones sin operandos
+        # =====================================================================
+        # INSTRUCCIONES SIN OPERANDOS (del PDF página 1-3)
+        # =====================================================================
         codigos_sin_op = {
-            'NOP': '90', 'CMC': 'F5', 'POPA': '61', 'CMPSB': 'A6',
-            'AAD': 'D5 0A', 'AAM': 'D4 0A', 'AAA': '37', 'AAS': '3F',
+            # Transferencia de datos
+            'MOVSB': 'A4', 'MOVSW': 'A5', 'LAHF': '9F', 'LODSB': 'AC', 'LODSW': 'AD',
+            'PUSHA': '60', 'POPA': '61',
+            # Control de banderas
+            'CLC': 'F8', 'CLD': 'FC', 'CLI': 'FA', 'CMC': 'F5',
+            'STC': 'F9', 'STD': 'FD', 'STI': 'FB', 'PUSHF': '9C', 'POPF': '9D',
+            # Otras
+            'AAA': '37', 'AAD': 'D5 0A', 'AAM': 'D4 0A', 'AAS': '3F',
             'CBW': '98', 'CWD': '99', 'DAA': '27', 'DAS': '2F',
-            'LAHF': '9F', 'SAHF': '9E', 'PUSHF': '9C', 'POPF': '9D',
-            'MOVSB': 'A4', 'MOVSW': 'A5', 'LODSB': 'AC', 'LODSW': 'AD',
-            'STOSB': 'AA', 'STOSW': 'AB', 'RET': 'C3', 'IRET': 'CF',
-            'CLC': 'F8', 'CLD': 'FC', 'CLI': 'FA', 'STC': 'F9', 'STD': 'FD', 'STI': 'FB'
+            'CMPSB': 'A6', 'CMPSW': 'A7', 'HLT': 'F4',
+            'INTO': 'CE', 'IRET': 'CF', 'NOP': '90',
+            'RET': 'C3', 'RETF': 'CB', 'SAHF': '9E',
+            'SCASB': 'AE', 'SCASW': 'AF', 'STOSB': 'AA', 'STOSW': 'AB',
+            'XLATB': 'D7'
         }
         if instr in codigos_sin_op:
             return codigos_sin_op[instr]
         
-        # INT
+        # =====================================================================
+        # INT Inm.byte - Codificación: 11001101 + byte inmediato
+        # =====================================================================
         if instr == 'INT' and operandos:
             val = self.obtener_valor_numerico(operandos[0].valor)
             return f'CD {val:02X}'
         
-        # Saltos condicionales
+        # =====================================================================
+        # SALTOS CONDICIONALES CON CÁLCULO DE DESPLAZAMIENTO
+        # Solo para: JNAE, JNE, JNLE, LOOPE, JA, JC
+        # =====================================================================
+        saltos_especiales = {
+            'JNAE': '72', 'JB': '72', 'JC': '72',  # JC = JNAE = JB
+            'JNE': '75', 'JNZ': '75',
+            'JNLE': '7F', 'JG': '7F',
+            'JA': '77', 'JNBE': '77',
+        }
+        
+        # LOOPE tiene código E1
+        if instr in ['LOOPE', 'LOOPZ']:
+            if operandos:
+                etiqueta = operandos[0].valor
+                # Buscar la dirección de la etiqueta en la tabla de símbolos
+                if etiqueta in self.tabla_simbolos:
+                    dir_etiqueta = self.tabla_simbolos[etiqueta].direccion
+                    if dir_etiqueta:
+                        dir_etiq_int = int(dir_etiqueta, 16)
+                        # El desplazamiento se calcula desde la dirección DESPUÉS de la instrucción
+                        # La instrucción LOOPE ocupa 2 bytes
+                        dir_siguiente = direccion_actual + 2
+                        desplazamiento = dir_etiq_int - dir_siguiente
+                        # Convertir a complemento a 2 si es negativo (8 bits)
+                        if desplazamiento < 0:
+                            desplazamiento = desplazamiento & 0xFF
+                        return f'E1 {desplazamiento:02X}'
+            return 'E1 00'
+        
+        if instr in saltos_especiales:
+            opcode = saltos_especiales[instr]
+            if operandos:
+                etiqueta = operandos[0].valor
+                # Buscar la dirección de la etiqueta en la tabla de símbolos
+                if etiqueta in self.tabla_simbolos:
+                    dir_etiqueta = self.tabla_simbolos[etiqueta].direccion
+                    if dir_etiqueta:
+                        dir_etiq_int = int(dir_etiqueta, 16)
+                        # El desplazamiento se calcula desde la dirección DESPUÉS de la instrucción
+                        # Los saltos cortos ocupan 2 bytes
+                        dir_siguiente = direccion_actual + 2
+                        desplazamiento = dir_etiq_int - dir_siguiente
+                        # Convertir a complemento a 2 si es negativo (8 bits)
+                        if desplazamiento < 0:
+                            desplazamiento = desplazamiento & 0xFF
+                        return f'{opcode} {desplazamiento:02X}'
+            return f'{opcode} 00'
+        
+        # =====================================================================
+        # OTROS SALTOS CONDICIONALES (sin cálculo especial de desplazamiento)
+        # =====================================================================
         codigos_saltos = {
-            'JO': '70', 'JNO': '71', 'JB': '72', 'JNAE': '72', 'JC': '72',
-            'JNB': '73', 'JAE': '73', 'JE': '74', 'JZ': '74', 'JNE': '75', 'JNZ': '75',
-            'JBE': '76', 'JA': '77', 'JS': '78', 'JNS': '79', 'JP': '7A', 'JNP': '7B',
-            'JL': '7C', 'JNGE': '7C', 'JNL': '7D', 'JGE': '7D', 'JLE': '7E', 'JNG': '7E',
-            'JG': '7F', 'JNLE': '7F'
+            'JO': '70', 'JNO': '71',
+            'JNB': '73', 'JAE': '73', 'JNC': '73',
+            'JE': '74', 'JZ': '74',
+            'JBE': '76', 'JNA': '76',
+            'JS': '78', 'JNS': '79',
+            'JP': '7A', 'JPE': '7A',
+            'JNP': '7B', 'JPO': '7B',
+            'JL': '7C', 'JNGE': '7C',
+            'JNL': '7D', 'JGE': '7D',
+            'JLE': '7E', 'JNG': '7E',
+            'JCXZ': 'E3'
         }
         if instr in codigos_saltos:
             return f'{codigos_saltos[instr]} 00'
         
-        codigos_loop = {'LOOP': 'E2', 'LOOPE': 'E1', 'LOOPZ': 'E1', 'LOOPNE': 'E0', 'LOOPNZ': 'E0'}
+        # LOOP instrucciones (sin LOOPE que ya se maneja arriba)
+        codigos_loop = {
+            'LOOP': 'E2',
+            'LOOPNZ': 'E0', 'LOOPNE': 'E0'
+        }
         if instr in codigos_loop:
             return f'{codigos_loop[instr]} 00'
         
-        if instr == 'JMP':
-            return 'E9 00 00'
+        # =====================================================================
+        # CALL y JMP - Etiqueta (near)
+        # =====================================================================
         if instr == 'CALL':
-            return 'E8 00 00'
+            return 'E8 00 00'  # 11101000 + desplazamiento 16 bits
+        if instr == 'JMP':
+            return 'E9 00 00'  # 11101001 + desplazamiento 16 bits
         
-        # INC registro
+        # =====================================================================
+        # PUSH Reg (corta) - 01010reg
+        # =====================================================================
+        if instr == 'PUSH' and operandos:
+            op = operandos[0].valor.upper()
+            # PUSH Reg 16-bit (corta): 01010 + reg
+            if op in self.registros_16bit:
+                codigo = 0x50 + int(self.reg_codigo[op], 2)
+                return f'{codigo:02X}'
+            # PUSH Regs (corta): 000 regs2 110
+            if op in self.regs2_codigo:
+                codigo = (int(self.regs2_codigo[op], 2) << 3) | 0x06
+                return f'{codigo:02X}'
+        
+        # =====================================================================
+        # POP Reg (corta) - 01011reg
+        # =====================================================================
+        if instr == 'POP' and operandos:
+            op = operandos[0].valor.upper()
+            # POP Reg 16-bit (corta): 01011 + reg
+            if op in self.registros_16bit:
+                codigo = 0x58 + int(self.reg_codigo[op], 2)
+                return f'{codigo:02X}'
+            # POP Regs (corta): 000 regs2 111
+            if op in self.regs2_codigo:
+                codigo = (int(self.regs2_codigo[op], 2) << 3) | 0x07
+                return f'{codigo:02X}'
+        
+        # =====================================================================
+        # INC Reg (corta) - 01000reg
+        # =====================================================================
         if instr == 'INC' and operandos:
             op = operandos[0].valor.upper()
-            if op in self.reg_codigo and op in {'AX', 'CX', 'DX', 'BX', 'SP', 'BP', 'SI', 'DI'}:
-                return f'{0x40 + int(self.reg_codigo[op], 2):02X}'
-            elif op in self.reg_codigo:
-                w = 1 if op in {'AX', 'CX', 'DX', 'BX', 'SP', 'BP', 'SI', 'DI'} else 0
+            if op in self.registros_16bit:
+                codigo = 0x40 + int(self.reg_codigo[op], 2)
+                return f'{codigo:02X}'
+            # INC Reg 8-bit: 1111111w mod 000 r/m
+            if op in self.registros_8bit:
                 mod_rm = 0xC0 | int(self.reg_codigo[op], 2)
-                return f'{"FF" if w else "FE"} {mod_rm:02X}'
+                return f'FE {mod_rm:02X}'
         
-        # MUL
+        # =====================================================================
+        # DEC Reg (corta) - 01001reg
+        # =====================================================================
+        if instr == 'DEC' and operandos:
+            op = operandos[0].valor.upper()
+            if op in self.registros_16bit:
+                codigo = 0x48 + int(self.reg_codigo[op], 2)
+                return f'{codigo:02X}'
+            # DEC Reg 8-bit: 1111111w mod 001 r/m
+            if op in self.registros_8bit:
+                mod_rm = 0xC0 | (0x01 << 3) | int(self.reg_codigo[op], 2)
+                return f'FE {mod_rm:02X}'
+        
+        # =====================================================================
+        # MUL Reg/Mem - 1111011w mod 100 r/m
+        # =====================================================================
         if instr == 'MUL' and operandos:
             op = operandos[0].valor.upper()
             if op in self.reg_codigo:
-                w = 1 if op in {'AX', 'CX', 'DX', 'BX', 'SP', 'BP', 'SI', 'DI'} else 0
+                w = 1 if op in self.registros_16bit else 0
+                opcode = 0xF7 if w else 0xF6
                 mod_rm = 0xC0 | (0x04 << 3) | int(self.reg_codigo[op], 2)
-                return f'{"F7" if w else "F6"} {mod_rm:02X}'
+                return f'{opcode:02X} {mod_rm:02X}'
         
-        # IDIV
+        # =====================================================================
+        # IMUL Reg/Mem - 1111011w mod 101 r/m
+        # =====================================================================
+        if instr == 'IMUL' and operandos:
+            op = operandos[0].valor.upper()
+            if op in self.reg_codigo:
+                w = 1 if op in self.registros_16bit else 0
+                opcode = 0xF7 if w else 0xF6
+                mod_rm = 0xC0 | (0x05 << 3) | int(self.reg_codigo[op], 2)
+                return f'{opcode:02X} {mod_rm:02X}'
+        
+        # =====================================================================
+        # DIV Reg/Mem - 1111011w mod 110 r/m
+        # =====================================================================
+        if instr == 'DIV' and operandos:
+            op = operandos[0].valor.upper()
+            if op in self.reg_codigo:
+                w = 1 if op in self.registros_16bit else 0
+                opcode = 0xF7 if w else 0xF6
+                mod_rm = 0xC0 | (0x06 << 3) | int(self.reg_codigo[op], 2)
+                return f'{opcode:02X} {mod_rm:02X}'
+        
+        # =====================================================================
+        # IDIV Reg/Mem - 1111011w mod 111 r/m
+        # =====================================================================
         if instr == 'IDIV' and operandos:
             op = operandos[0].valor.upper()
             if op in self.reg_codigo:
-                w = 1 if op in {'AX', 'CX', 'DX', 'BX', 'SP', 'BP', 'SI', 'DI'} else 0
+                w = 1 if op in self.registros_16bit else 0
+                opcode = 0xF7 if w else 0xF6
                 mod_rm = 0xC0 | (0x07 << 3) | int(self.reg_codigo[op], 2)
-                return f'{"F7" if w else "F6"} {mod_rm:02X}'
+                return f'{opcode:02X} {mod_rm:02X}'
         
-        # AND, OR, XOR
-        ops_logicas = {'AND': ('21', '20'), 'OR': ('09', '08'), 'XOR': ('31', '30')}
-        if instr in ops_logicas and len(operandos) >= 2:
+        # =====================================================================
+        # NOT Reg/Mem - 1111011w mod 010 r/m
+        # =====================================================================
+        if instr == 'NOT' and operandos:
+            op = operandos[0].valor.upper()
+            if op in self.reg_codigo:
+                w = 1 if op in self.registros_16bit else 0
+                opcode = 0xF7 if w else 0xF6
+                mod_rm = 0xC0 | (0x02 << 3) | int(self.reg_codigo[op], 2)
+                return f'{opcode:02X} {mod_rm:02X}'
+        
+        # =====================================================================
+        # NEG Reg/Mem - 1111011w mod 011 r/m
+        # =====================================================================
+        if instr == 'NEG' and operandos:
+            op = operandos[0].valor.upper()
+            if op in self.reg_codigo:
+                w = 1 if op in self.registros_16bit else 0
+                opcode = 0xF7 if w else 0xF6
+                mod_rm = 0xC0 | (0x03 << 3) | int(self.reg_codigo[op], 2)
+                return f'{opcode:02X} {mod_rm:02X}'
+        
+        # =====================================================================
+        # MOV Reg, Reg - 1000101w mod reg r/m (d=1)
+        # =====================================================================
+        if instr == 'MOV' and len(operandos) >= 2:
+            op1, op2 = operandos[0].valor.upper(), operandos[1].valor.upper()
+            
+            # MOV Reg, Reg
+            if op1 in self.reg_codigo and op2 in self.reg_codigo:
+                w = 1 if op1 in self.registros_16bit else 0
+                opcode = 0x8B if w else 0x8A  # d=1, w=?
+                mod_rm = 0xC0 | (int(self.reg_codigo[op1], 2) << 3) | int(self.reg_codigo[op2], 2)
+                return f'{opcode:02X} {mod_rm:02X}'
+            
+            # MOV Reg, Inm (corta) - 1011w reg + dato
+            if op1 in self.reg_codigo:
+                try:
+                    val = self.obtener_valor_numerico(op2)
+                    if op1 in self.registros_16bit:
+                        opcode = 0xB8 + int(self.reg_codigo[op1], 2)
+                        return f'{opcode:02X} {val & 0xFF:02X} {(val >> 8) & 0xFF:02X}'
+                    else:
+                        opcode = 0xB0 + int(self.reg_codigo[op1], 2)
+                        return f'{opcode:02X} {val & 0xFF:02X}'
+                except:
+                    pass
+        
+        # =====================================================================
+        # ADD Reg, Reg - 000000dw mod reg r/m
+        # =====================================================================
+        if instr == 'ADD' and len(operandos) >= 2:
             op1, op2 = operandos[0].valor.upper(), operandos[1].valor.upper()
             if op1 in self.reg_codigo and op2 in self.reg_codigo:
-                w = 1 if op1 in {'AX', 'CX', 'DX', 'BX', 'SP', 'BP', 'SI', 'DI'} else 0
+                w = 1 if op1 in self.registros_16bit else 0
+                opcode = 0x03 if w else 0x02  # d=1
                 mod_rm = 0xC0 | (int(self.reg_codigo[op1], 2) << 3) | int(self.reg_codigo[op2], 2)
-                cod = ops_logicas[instr][0] if w else ops_logicas[instr][1]
-                return f'{cod} {mod_rm:02X}'
+                return f'{opcode:02X} {mod_rm:02X}'
         
-        # LEA
+        # =====================================================================
+        # SUB Reg, Reg - 001010dw mod reg r/m
+        # =====================================================================
+        if instr == 'SUB' and len(operandos) >= 2:
+            op1, op2 = operandos[0].valor.upper(), operandos[1].valor.upper()
+            if op1 in self.reg_codigo and op2 in self.reg_codigo:
+                w = 1 if op1 in self.registros_16bit else 0
+                opcode = 0x2B if w else 0x2A  # d=1
+                mod_rm = 0xC0 | (int(self.reg_codigo[op1], 2) << 3) | int(self.reg_codigo[op2], 2)
+                return f'{opcode:02X} {mod_rm:02X}'
+        
+        # =====================================================================
+        # CMP Reg, Reg - 001110dw mod reg r/m
+        # =====================================================================
+        if instr == 'CMP' and len(operandos) >= 2:
+            op1, op2 = operandos[0].valor.upper(), operandos[1].valor.upper()
+            if op1 in self.reg_codigo and op2 in self.reg_codigo:
+                w = 1 if op1 in self.registros_16bit else 0
+                opcode = 0x3B if w else 0x3A  # d=1
+                mod_rm = 0xC0 | (int(self.reg_codigo[op1], 2) << 3) | int(self.reg_codigo[op2], 2)
+                return f'{opcode:02X} {mod_rm:02X}'
+        
+        # =====================================================================
+        # AND Reg, Reg - 001000dw mod reg r/m
+        # =====================================================================
+        if instr == 'AND' and len(operandos) >= 2:
+            op1, op2 = operandos[0].valor.upper(), operandos[1].valor.upper()
+            if op1 in self.reg_codigo and op2 in self.reg_codigo:
+                w = 1 if op1 in self.registros_16bit else 0
+                opcode = 0x23 if w else 0x22  # d=1
+                mod_rm = 0xC0 | (int(self.reg_codigo[op1], 2) << 3) | int(self.reg_codigo[op2], 2)
+                return f'{opcode:02X} {mod_rm:02X}'
+        
+        # =====================================================================
+        # OR Reg, Reg - 000010dw mod reg r/m
+        # =====================================================================
+        if instr == 'OR' and len(operandos) >= 2:
+            op1, op2 = operandos[0].valor.upper(), operandos[1].valor.upper()
+            if op1 in self.reg_codigo and op2 in self.reg_codigo:
+                w = 1 if op1 in self.registros_16bit else 0
+                opcode = 0x0B if w else 0x0A  # d=1
+                mod_rm = 0xC0 | (int(self.reg_codigo[op1], 2) << 3) | int(self.reg_codigo[op2], 2)
+                return f'{opcode:02X} {mod_rm:02X}'
+        
+        # =====================================================================
+        # XOR Reg, Reg - 001100dw mod reg r/m
+        # =====================================================================
+        if instr == 'XOR' and len(operandos) >= 2:
+            op1, op2 = operandos[0].valor.upper(), operandos[1].valor.upper()
+            if op1 in self.reg_codigo and op2 in self.reg_codigo:
+                w = 1 if op1 in self.registros_16bit else 0
+                opcode = 0x33 if w else 0x32  # d=1
+                mod_rm = 0xC0 | (int(self.reg_codigo[op1], 2) << 3) | int(self.reg_codigo[op2], 2)
+                return f'{opcode:02X} {mod_rm:02X}'
+        
+        # =====================================================================
+        # XCHG Acum, Reg (corta) - 10010reg
+        # =====================================================================
+        if instr == 'XCHG' and len(operandos) >= 2:
+            op1, op2 = operandos[0].valor.upper(), operandos[1].valor.upper()
+            # XCHG AX, Reg o XCHG Reg, AX
+            if op1 == 'AX' and op2 in self.registros_16bit:
+                codigo = 0x90 + int(self.reg_codigo[op2], 2)
+                return f'{codigo:02X}'
+            if op2 == 'AX' and op1 in self.registros_16bit:
+                codigo = 0x90 + int(self.reg_codigo[op1], 2)
+                return f'{codigo:02X}'
+            # XCHG Reg, Reg - 1000011w mod reg r/m
+            if op1 in self.reg_codigo and op2 in self.reg_codigo:
+                w = 1 if op1 in self.registros_16bit else 0
+                opcode = 0x87 if w else 0x86
+                mod_rm = 0xC0 | (int(self.reg_codigo[op1], 2) << 3) | int(self.reg_codigo[op2], 2)
+                return f'{opcode:02X} {mod_rm:02X}'
+        
+        # =====================================================================
+        # LEA Reg, Mem - 10001101 mod reg r/m
+        # =====================================================================
         if instr == 'LEA' and len(operandos) >= 2:
             op1 = operandos[0].valor.upper()
+            if op1 in self.registros_16bit:
+                mod_rm = (int(self.reg_codigo[op1], 2) << 3) | 0x06  # Dirección directa
+                return f'8D {mod_rm:02X} 00 00'
+        
+        # =====================================================================
+        # SHL/SAL, SHR, SAR, ROL, ROR, RCL, RCR
+        # Reg, 1: 1101000w mod TTT r/m
+        # Reg, CL: 1101001w mod TTT r/m
+        # =====================================================================
+        shift_ops = {
+            'ROL': '000', 'ROR': '001', 'RCL': '010', 'RCR': '011',
+            'SHL': '100', 'SAL': '100', 'SHR': '101', 'SAR': '111'
+        }
+        if instr in shift_ops and len(operandos) >= 2:
+            op1, op2 = operandos[0].valor.upper(), operandos[1].valor.upper()
             if op1 in self.reg_codigo:
-                mod_rm = (int(self.reg_codigo[op1], 2) << 3) | 0x07
-                return f'8D {mod_rm:02X}'
+                ttt = int(shift_ops[instr], 2)
+                w = 1 if op1 in self.registros_16bit else 0
+                mod_rm = 0xC0 | (ttt << 3) | int(self.reg_codigo[op1], 2)
+                
+                if op2 == '1':
+                    opcode = 0xD1 if w else 0xD0
+                    return f'{opcode:02X} {mod_rm:02X}'
+                elif op2 == 'CL':
+                    opcode = 0xD3 if w else 0xD2
+                    return f'{opcode:02X} {mod_rm:02X}'
         
-        # PUSH/POP
-        if instr == 'PUSH' and operandos:
-            op = operandos[0].valor.upper()
-            if op in {'AX', 'CX', 'DX', 'BX', 'SP', 'BP', 'SI', 'DI'}:
-                return f'{0x50 + int(self.reg_codigo[op], 2):02X}'
-            elif op in self.regs2_codigo:
-                return f'{(int(self.regs2_codigo[op], 2) << 3) | 0x06:02X}'
-        
-        if instr == 'POP' and operandos:
-            op = operandos[0].valor.upper()
-            if op in {'AX', 'CX', 'DX', 'BX', 'SP', 'BP', 'SI', 'DI'}:
-                return f'{0x58 + int(self.reg_codigo[op], 2):02X}'
-            elif op in self.regs2_codigo:
-                return f'{(int(self.regs2_codigo[op], 2) << 3) | 0x07:02X}'
-        
-        return "??"
+        return ""
 
     def obtener_valor_numerico(self, valor_str: str) -> int:
         valor = valor_str.strip().upper()
+        # Quitar sufijo D de decimal
+        if valor.endswith('D'):
+            valor = valor[:-1]
         if valor.endswith('H'):
             return int(valor[:-1], 16)
         if valor.endswith('B'):
@@ -713,7 +1257,6 @@ class Ensamblador8086:
         if string_match:
             return ' '.join([f'{ord(c):02X}' for c in string_match.group(1)])
         
-        # Verificar DUP con sintaxis correcta
         dup_match = re.match(r'^(\d+)\s+DUP\s*\(([^)]+)\)$', valor_str, re.IGNORECASE)
         if dup_match:
             cant = int(dup_match.group(1))
@@ -721,9 +1264,8 @@ class Ensamblador8086:
             byte_val = '00' if val == '?' else f'{self.obtener_valor_numerico(val):02X}'
             return ' '.join([byte_val] * min(cant, 8)) + (' ...' if cant > 8 else '')
         
-        # Si contiene DUP pero no coincide con el patrón, es error
         if 'DUP' in valor_str.upper():
-            return ''  # Error de sintaxis
+            return ''
         
         if directiva == 'DB':
             if valor_str.strip() == '?':
@@ -739,66 +1281,166 @@ class Ensamblador8086:
         return ''
 
     def generar_codificacion(self):
+        """
+        Genera la codificación usando los resultados del análisis sintáctico.
+        La columna de estado debe coincidir con el análisis sintáctico.
+        NO incluye líneas de comentarios.
+        Las instrucciones incorrectas solo muestran "Incorrecta" sin código máquina.
+        
+        Para los saltos JNAE, JNE, JNLE, LOOPE, JA, JC calcula el desplazamiento real.
+        """
         self.lineas_codificadas = []
         segmento = None
         contadores = {'STACK': 0x0250, 'DATA': 0x0250, 'CODE': 0x0250}
         contador = 0x0250
+        
+        # Crear un diccionario para buscar resultados del análisis por número de línea
+        resultados_analisis = {}
+        for analisis in self.lineas_analizadas:
+            resultados_analisis[analisis['numero']] = analisis
+
+        # =====================================================================
+        # PRIMERA PASADA: Asignar direcciones a todas las etiquetas
+        # =====================================================================
+        segmento_tmp = None
+        contador_tmp = 0x0250
+        contadores_tmp = {'STACK': 0x0250, 'DATA': 0x0250, 'CODE': 0x0250}
+        
+        for i, linea_raw in enumerate(self.lineas_codigo):
+            num_linea = i + 1
+            linea = linea_raw.strip()
+            linea_limpia = self.limpiar_comentarios(linea).strip()
+            
+            if not linea_limpia or linea.startswith(';'):
+                continue
+            
+            tokens_linea = self.tokenizar_linea(linea_limpia, num_linea)
+            linea_upper = linea_limpia.upper()
+            
+            # Detectar segmentos
+            if re.match(r'^\.STACK\s+SEGMENT$', linea_upper):
+                segmento_tmp = 'STACK'
+                contador_tmp = contadores_tmp['STACK']
+                continue
+            if re.match(r'^\.DATA\s+SEGMENT$', linea_upper):
+                segmento_tmp = 'DATA'
+                contador_tmp = contadores_tmp['DATA']
+                continue
+            if re.match(r'^\.CODE\s+SEGMENT$', linea_upper):
+                segmento_tmp = 'CODE'
+                contador_tmp = contadores_tmp['CODE']
+                continue
+            
+            if tokens_linea and tokens_linea[0].valor.upper() == 'ENDS':
+                segmento_tmp = None
+                continue
+            if tokens_linea and tokens_linea[0].valor.upper() == 'END':
+                continue
+            
+            # Asignar dirección a etiquetas en CODE
+            if segmento_tmp == 'CODE':
+                if tokens_linea and tokens_linea[0].tipo == TipoToken.SIMBOLO and tokens_linea[0].valor.endswith(':'):
+                    nombre = tokens_linea[0].valor.replace(':', '')
+                    if nombre in self.tabla_simbolos:
+                        self.tabla_simbolos[nombre].direccion = f'{contador_tmp:04X}'
+                
+                # Calcular tamaño para avanzar contador
+                analisis = resultados_analisis.get(num_linea, None)
+                es_correcta = analisis['resultado'] == 'Correcta' if analisis else False
+                if es_correcta:
+                    tamano = self.calcular_tamano_instruccion(tokens_linea)
+                    contador_tmp += tamano
+                    contadores_tmp['CODE'] = contador_tmp
+            
+            elif segmento_tmp == 'DATA':
+                analisis = resultados_analisis.get(num_linea, None)
+                es_correcta = analisis['resultado'] == 'Correcta' if analisis else False
+                if es_correcta and len(tokens_linea) >= 3 and tokens_linea[0].tipo == TipoToken.SIMBOLO:
+                    nombre = tokens_linea[0].valor.rstrip(':')
+                    if nombre in self.tabla_simbolos:
+                        self.tabla_simbolos[nombre].direccion = f'{contador_tmp:04X}'
+                    tamano = self.calcular_tamano_dato(tokens_linea)
+                    contador_tmp += tamano
+                    contadores_tmp['DATA'] = contador_tmp
+            
+            elif segmento_tmp == 'STACK':
+                analisis = resultados_analisis.get(num_linea, None)
+                es_correcta = analisis['resultado'] == 'Correcta' if analisis else False
+                if es_correcta and tokens_linea and tokens_linea[0].valor.upper() == 'DW':
+                    tokens_tmp = [Token('STACK', TipoToken.SIMBOLO, i, 0)] + tokens_linea
+                    tamano = self.calcular_tamano_dato(tokens_tmp)
+                    contador_tmp += tamano
+                    contadores_tmp['STACK'] = contador_tmp
+
+        # =====================================================================
+        # SEGUNDA PASADA: Generar código máquina con desplazamientos calculados
+        # =====================================================================
+        segmento = None
+        contador = 0x0250
+        contadores = {'STACK': 0x0250, 'DATA': 0x0250, 'CODE': 0x0250}
 
         for i, linea_raw in enumerate(self.lineas_codigo):
+            num_linea = i + 1
             linea = linea_raw.strip()
             linea_limpia = self.limpiar_comentarios(linea).strip()
 
-            if not linea_limpia:
-                self.lineas_codificadas.append({
-                    'numero': i + 1, 'direccion': '', 'linea': linea_raw,
-                    'codigo_maquina': '', 'tamano': 0, 'segmento': segmento
-                })
+            # OMITIR líneas vacías y comentarios
+            if not linea_limpia or linea.startswith(';'):
                 continue
 
-            if linea.startswith(';'):
-                self.lineas_codificadas.append({
-                    'numero': i + 1, 'direccion': '', 'linea': linea_raw,
-                    'codigo_maquina': '; Comentario', 'tamano': 0, 'segmento': segmento
-                })
-                continue
+            tokens_linea = self.tokenizar_linea(linea_limpia, num_linea)
+            
+            # Obtener resultado del análisis sintáctico
+            analisis = resultados_analisis.get(num_linea, None)
+            es_correcta = analisis['resultado'] == 'Correcta' if analisis else False
 
-            tokens_linea = self.tokenizar_linea(linea_limpia, i + 1)
-
-            # Detectar segmentos
-            if '.STACK SEGMENT' in linea_limpia.upper():
+            linea_upper = linea_limpia.upper()
+            
+            # Detectar inicio de segmentos
+            if re.match(r'^\.STACK\s+SEGMENT$', linea_upper):
                 segmento = 'STACK'
                 contador = contadores['STACK']
                 self.lineas_codificadas.append({
-                    'numero': i + 1, 'direccion': f'{contador:04X}',
-                    'linea': linea_raw, 'codigo_maquina': '; Inicio STACK',
+                    'numero': num_linea, 'direccion': f'{contador:04X}',
+                    'linea': linea_limpia, 'codigo_maquina': 'Correcta' if es_correcta else 'Incorrecta',
                     'tamano': 0, 'segmento': segmento
                 })
                 continue
-
-            if '.DATA SEGMENT' in linea_limpia.upper():
+            
+            if re.match(r'^\.DATA\s+SEGMENT$', linea_upper):
                 segmento = 'DATA'
                 contador = contadores['DATA']
                 self.lineas_codificadas.append({
-                    'numero': i + 1, 'direccion': f'{contador:04X}',
-                    'linea': linea_raw, 'codigo_maquina': '; Inicio DATA',
+                    'numero': num_linea, 'direccion': f'{contador:04X}',
+                    'linea': linea_limpia, 'codigo_maquina': 'Correcta' if es_correcta else 'Incorrecta',
                     'tamano': 0, 'segmento': segmento
                 })
                 continue
-
-            if '.CODE SEGMENT' in linea_limpia.upper():
+            
+            if re.match(r'^\.CODE\s+SEGMENT$', linea_upper):
                 segmento = 'CODE'
                 contador = contadores['CODE']
                 self.lineas_codificadas.append({
-                    'numero': i + 1, 'direccion': f'{contador:04X}',
-                    'linea': linea_raw, 'codigo_maquina': '; Inicio CODE',
+                    'numero': num_linea, 'direccion': f'{contador:04X}',
+                    'linea': linea_limpia, 'codigo_maquina': 'Correcta' if es_correcta else 'Incorrecta',
+                    'tamano': 0, 'segmento': segmento
+                })
+                continue
+            
+            # Detectar declaraciones de segmento INCORRECTAS
+            if re.match(r'^\.\w+\s+SEGMENT$', linea_upper) and not re.match(r'^\.(?:STACK|DATA|CODE)\s+SEGMENT$', linea_upper):
+                self.lineas_codificadas.append({
+                    'numero': num_linea, 'direccion': f'{contador:04X}',
+                    'linea': linea_limpia, 'codigo_maquina': 'Incorrecta',
                     'tamano': 0, 'segmento': segmento
                 })
                 continue
 
+            # ENDS y END
             if tokens_linea and tokens_linea[0].valor.upper() == 'ENDS':
                 self.lineas_codificadas.append({
-                    'numero': i + 1, 'direccion': f'{contador:04X}',
-                    'linea': linea_raw, 'codigo_maquina': '; Fin segmento',
+                    'numero': num_linea, 'direccion': f'{contador:04X}',
+                    'linea': linea_limpia, 'codigo_maquina': 'Correcta' if es_correcta else 'Incorrecta',
                     'tamano': 0, 'segmento': segmento
                 })
                 segmento = None
@@ -806,8 +1448,8 @@ class Ensamblador8086:
 
             if tokens_linea and tokens_linea[0].valor.upper() == 'END':
                 self.lineas_codificadas.append({
-                    'numero': i + 1, 'direccion': f'{contador:04X}',
-                    'linea': linea_raw, 'codigo_maquina': '; Fin programa',
+                    'numero': num_linea, 'direccion': f'{contador:04X}',
+                    'linea': linea_limpia, 'codigo_maquina': 'Correcta' if es_correcta else 'Incorrecta',
                     'tamano': 0, 'segmento': segmento
                 })
                 continue
@@ -816,46 +1458,43 @@ class Ensamblador8086:
             codigo = ''
             direccion = f'{contador:04X}'
 
-            if segmento == 'DATA':
-                if len(tokens_linea) >= 3 and tokens_linea[0].tipo == TipoToken.SIMBOLO:
-                    # Primero validar la sintaxis
-                    res, msg = self.validar_linea(tokens_linea, 'DATA')
-                    if res == 'Incorrecta':
-                        codigo = f'ERROR: {msg}'
-                        tamano = 0  # No incrementar dirección si hay error
-                    else:
+            if segmento == 'STACK':
+                if es_correcta:
+                    codigo = 'Correcta'
+                    if tokens_linea and tokens_linea[0].valor.upper() == 'DW':
+                        tokens_tmp = [Token('STACK', TipoToken.SIMBOLO, i, 0)] + tokens_linea
+                        tamano = self.calcular_tamano_dato(tokens_tmp)
+                else:
+                    codigo = 'Incorrecta'
+                    tamano = 0
+
+            elif segmento == 'DATA':
+                if es_correcta:
+                    codigo = 'Correcta'
+                    if len(tokens_linea) >= 3 and tokens_linea[0].tipo == TipoToken.SIMBOLO:
                         tamano = self.calcular_tamano_dato(tokens_linea)
-                        nombre = tokens_linea[0].valor.rstrip(':')
-                        if nombre in self.tabla_simbolos:
-                            self.tabla_simbolos[nombre].direccion = direccion
-                        codigo = self.generar_bytes_dato(tokens_linea)
-                        if not codigo and tamano == 0:
-                            codigo = 'ERROR: No se pudo generar código'
+                else:
+                    codigo = 'Incorrecta'
+                    tamano = 0
 
             elif segmento == 'CODE':
-                if tokens_linea and tokens_linea[0].tipo == TipoToken.SIMBOLO and tokens_linea[0].valor.endswith(':'):
-                    nombre = tokens_linea[0].valor.replace(':', '')
-                    if nombre in self.tabla_simbolos:
-                        self.tabla_simbolos[nombre].direccion = direccion
-
-                # Primero validar
-                if tokens_linea:
-                    res, msg = self.validar_linea(tokens_linea, 'CODE')
-                    if res == 'Incorrecta':
-                        codigo = f'ERROR: {msg}'
-                        tamano = 0  # No incrementar dirección si hay error
+                if es_correcta:
+                    # Codificar instrucciones pasando la dirección actual
+                    codigo_maq = self.codificar_instruccion(tokens_linea, contador)
+                    if codigo_maq:
+                        codigo = f'Correcta | {codigo_maq}'
                     else:
-                        tamano = self.calcular_tamano_instruccion(tokens_linea)
-                        codigo = self.codificar_instruccion(tokens_linea)
-
-            elif segmento == 'STACK':
-                if tokens_linea and tokens_linea[0].valor.upper() == 'DW':
-                    tokens_tmp = [Token('STACK', TipoToken.SIMBOLO, i, 0)] + tokens_linea
-                    tamano = self.calcular_tamano_dato(tokens_tmp)
-                    codigo = self.generar_bytes_dato(tokens_tmp)
+                        codigo = 'Correcta'
+                    tamano = self.calcular_tamano_instruccion(tokens_linea)
+                else:
+                    codigo = 'Incorrecta'
+                    tamano = 0
+            
+            else:
+                codigo = 'Incorrecta' if not es_correcta else 'Correcta'
 
             self.lineas_codificadas.append({
-                'numero': i + 1, 'direccion': direccion, 'linea': linea_raw,
+                'numero': num_linea, 'direccion': direccion, 'linea': linea_limpia,
                 'codigo_maquina': codigo, 'tamano': tamano, 'segmento': segmento
             })
 
@@ -871,7 +1510,7 @@ class Ensamblador8086:
 class VentanaPrincipal:
     def __init__(self, root, ensamblador):
         self.root = root
-        self.root.title("Ensamblador 8086 - Código y Tokens")
+        self.root.title("Ensamblador 8086 - Análisis Sintáctico Mejorado")
         self.root.geometry("1000x700+100+100")
         self.root.minsize(800, 600)
 
@@ -1024,7 +1663,7 @@ class VentanaPrincipal:
 
                 if self.ensamblador.lineas_codificadas:
                     f.write("\n" + "=" * 80 + "\nCÓDIGO CON DIRECCIONES\n" + "-" * 80 + "\n")
-                    f.write(f"{'Dir':<8} {'Código Fuente':<50} {'Código Máquina':<25}\n")
+                    f.write(f"{'Dir':<8} {'Código Fuente':<50} {'Estado/Código':<25}\n")
                     for lc in self.ensamblador.lineas_codificadas:
                         f.write(f"{lc['direccion']:<8} {lc['linea']:<50} {lc['codigo_maquina']:<25}\n")
 
@@ -1084,15 +1723,12 @@ class VentanaCodificacion(tk.Toplevel):
         self.geometry("1100x700+200+50")
         self.minsize(900, 600)
         
-        # Paginación
         self.pagina_actual = 0
         self.elementos_por_pagina = 25
 
-        # Info
         info = ttk.Label(self, text="Dirección inicial de cada segmento: 0250h", font=('Helvetica', 11, 'bold'))
         info.pack(pady=10)
 
-        # Frame principal para el código
         frame_principal = ttk.Frame(self)
         frame_principal.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
@@ -1105,7 +1741,6 @@ class VentanaCodificacion(tk.Toplevel):
         scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
         self.texto_codigo.pack(fill=tk.BOTH, expand=True)
         
-        # Frame de paginación
         frame_paginacion = ttk.Frame(self)
         frame_paginacion.pack(fill=tk.X, padx=10, pady=5)
         
@@ -1144,13 +1779,11 @@ class VentanaCodificacion(tk.Toplevel):
             pass
 
     def actualizar(self):
-        # Código con direcciones
         self.texto_codigo.delete(1.0, tk.END)
         if self.ensamblador.lineas_codificadas:
-            self.texto_codigo.insert(tk.END, f"{'Dir.':<8} {'Código Fuente':<55} {'Código Máquina / Error':<30}\n")
+            self.texto_codigo.insert(tk.END, f"{'Dir.':<8} {'Código Fuente':<55} {'Estado / Código Máquina':<30}\n")
             self.texto_codigo.insert(tk.END, "=" * 100 + "\n")
             
-            # Paginación
             inicio = self.pagina_actual * self.elementos_por_pagina
             fin = min(inicio + self.elementos_por_pagina, len(self.ensamblador.lineas_codificadas))
             
@@ -1160,7 +1793,6 @@ class VentanaCodificacion(tk.Toplevel):
                 linea = lc['linea'][:52] + '...' if len(lc['linea']) > 55 else lc['linea']
                 self.texto_codigo.insert(tk.END, f"{dir_str:<8} {linea:<55} {lc['codigo_maquina']:<30}\n")
             
-            # Actualizar etiqueta de página
             total_paginas = max(1, (len(self.ensamblador.lineas_codificadas) + self.elementos_por_pagina - 1) // self.elementos_por_pagina)
             self.label_pagina.config(text=f"Página {self.pagina_actual + 1} de {total_paginas}")
         else:
