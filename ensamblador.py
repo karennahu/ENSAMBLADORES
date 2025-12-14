@@ -19,7 +19,6 @@ class TipoToken(Enum):
     CONSTANTE_HEXADECIMAL = "Constante Numérica Hexadecimal"
     CONSTANTE_BINARIA = "Constante Numérica Binaria"
     CONSTANTE_CARACTER = "Constante Caracter"
-    DECLARACION_DUP = "Pseudoinstrucción"
     NO_IDENTIFICADO = "Elemento no identificado"
 
 @dataclass
@@ -195,10 +194,9 @@ class Ensamblador8086:
             (r'byte\s+ptr', 'COMP_PTR'),
             (r'word\s+ptr', 'COMP_PTR'),
             (r'dword\s+ptr', 'COMP_PTR'),
-            # DUP con número
-            (r'\d+\s+dup\s*\([^)]*\)', 'COMP_DUP'),
-            # DUP sin número (error)
-            (r'dup\s*\([^)]*\)', 'COMP_DUP_ERR'),
+            # DUP con paréntesis - SOLO el dup(valor), NO el número antes
+            # El número se tokeniza por separado
+            (r'dup\s*\([^)]*\)', 'COMP_DUP'),
             # Direccionamiento con corchetes
             (r'\[[^\]]*\]', 'COMP_BRACKET'),
             # Strings con comillas dobles
@@ -280,12 +278,10 @@ class Ensamblador8086:
             return TipoToken.PSEUDOINSTRUCCION
         if re.match(r'^(?:BYTE|WORD|DWORD)\s+PTR$', t, re.IGNORECASE):
             return TipoToken.PSEUDOINSTRUCCION
-        # número DUP(valor) - formato correcto - es declaración de datos, no pseudoinstrucción
-        if re.match(r'^\d+\s+DUP\s*\([^)]*\)$', t, re.IGNORECASE):
-            return TipoToken.DECLARACION_DUP
-        # DUP(valor) sin número - formato incorrecto
+        
+        # DUP(valor) - es pseudoinstrucción (el número se tokeniza por separado)
         if re.match(r'^DUP\s*\([^)]*\)$', t, re.IGNORECASE):
-            return TipoToken.NO_IDENTIFICADO
+            return TipoToken.PSEUDOINSTRUCCION
         
         # Direccionamiento con corchetes - es un modo de direccionamiento válido
         if re.match(r'^\[[^\]]+\]$', t):
@@ -313,13 +309,19 @@ class Ensamblador8086:
 
         # ===== CONSTANTES NUMÉRICAS =====
         
-        # CONSTANTE BINARIA: termina con B
+        # CONSTANTE BINARIA: solo 0s y 1s, termina con B
         if re.match(r'^[01]+[Bb]$', t):
             return TipoToken.CONSTANTE_BINARIA
         
-        # CONSTANTE HEXADECIMAL: empieza con dígito, termina con H
-        if re.match(r'^[0-9][0-9A-Fa-f]*[Hh]$', t):
+        # CONSTANTE HEXADECIMAL: DEBE empezar con 0 y terminar con H
+        # Ejemplos válidos: 0h, 0Fh, 032h, 0ABCDh
+        # Ejemplos inválidos: 45H (no empieza con 0), Fh (empieza con letra)
+        if re.match(r'^0[0-9A-Fa-f]*[Hh]$', t):
             return TipoToken.CONSTANTE_HEXADECIMAL
+        
+        # Hexadecimal inválido (no empieza con 0 pero termina con H)
+        if re.match(r'^[1-9][0-9A-Fa-f]*[Hh]$', t):
+            return TipoToken.NO_IDENTIFICADO
         
         # Hexadecimal inválido (empieza con letra)
         if re.match(r'^[A-Fa-f][0-9A-Fa-f]*[Hh]$', t):
@@ -338,6 +340,7 @@ class Ensamblador8086:
             nombre = t[:-1]
             if len(nombre) > 31:
                 return TipoToken.NO_IDENTIFICADO
+            # Debe empezar con letra o guion bajo
             if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', nombre):
                 return TipoToken.SIMBOLO
             return TipoToken.NO_IDENTIFICADO
@@ -604,14 +607,27 @@ class Ensamblador8086:
         if tokens[0].tipo == TipoToken.SIMBOLO and tokens[0].valor.endswith(':'):
             return "Incorrecta", "Etiquetas de código no permitidas en segmento de datos"
         
+        # Verificar si el primer token es un número (error: el nombre debe empezar con letra)
+        if tokens[0].tipo in [TipoToken.CONSTANTE_DECIMAL, TipoToken.CONSTANTE_HEXADECIMAL, TipoToken.CONSTANTE_BINARIA]:
+            return "Incorrecta", f"Nombre de variable no puede empezar con número: '{tokens[0].valor}'"
+        
+        # Verificar si algún token es no identificado
+        for tok in tokens:
+            if tok.tipo == TipoToken.NO_IDENTIFICADO:
+                return "Incorrecta", f"Elemento no identificado: '{tok.valor}'"
+        
         if len(tokens) < 3:
             return "Incorrecta", "Definición de datos incompleta (requiere: nombre directiva valor)"
         
-        # El primer token debe ser un símbolo (nombre de variable)
+        # El primer token debe ser un símbolo válido (nombre de variable)
         if tokens[0].tipo != TipoToken.SIMBOLO:
-            return "Incorrecta", f"Debe iniciar con un nombre de variable válido, no '{tokens[0].valor}'"
+            return "Incorrecta", f"Nombre de variable inválido: '{tokens[0].valor}'"
         
         nombre = tokens[0].valor
+        # Verificar que el nombre empiece con letra o guion bajo
+        if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', nombre):
+            return "Incorrecta", f"Nombre de variable inválido: '{nombre}' (debe empezar con letra o _)"
+        
         if len(nombre) > 31:
             return "Incorrecta", f"Nombre de variable muy largo (máx 31 caracteres)"
         
@@ -679,9 +695,13 @@ class Ensamblador8086:
         if re.match(r'^\d+[Dd]?$', valor_str):
             return "Correcta", f"Variable {nombre} inicializada"
         
-        # Constante hexadecimal
-        if re.match(r'^[0-9][0-9A-Fa-f]*[Hh]$', valor_str):
+        # Constante hexadecimal - DEBE empezar con 0
+        if re.match(r'^0[0-9A-Fa-f]*[Hh]$', valor_str):
             return "Correcta", f"Variable {nombre} inicializada (hex)"
+        
+        # Hexadecimal inválido (no empieza con 0)
+        if re.match(r'^[1-9][0-9A-Fa-f]*[Hh]$', valor_str):
+            return "Incorrecta", f"Hexadecimal inválido: '{valor_str}' (debe empezar con 0)"
         
         # Constante binaria
         if re.match(r'^[01]+[Bb]$', valor_str):
@@ -701,14 +721,18 @@ class Ensamblador8086:
                 # Verificar si es válido: número, ?, string entre comillas
                 if parte == '?':
                     continue
-                if re.match(r'^\d+[DHBdhb]?$', parte):
+                if re.match(r'^\d+[Dd]?$', parte):
                     continue
-                if re.match(r'^[0-9][0-9A-Fa-f]*[Hh]$', parte):
+                # Hexadecimal debe empezar con 0
+                if re.match(r'^0[0-9A-Fa-f]*[Hh]$', parte):
                     continue
                 if re.match(r'^["\'][^"\']*["\']$', parte):
                     continue
+                # Binario
+                if re.match(r'^[01]+[Bb]$', parte):
+                    continue
                 # Si llegamos aquí, hay un elemento inválido
-                return "Incorrecta", f"Elemento inválido en lista: '{parte}' (¿faltan comillas?)"
+                return "Incorrecta", f"Elemento inválido en lista: '{parte}'"
             return "Correcta", f"Tabla {nombre} definida"
         
         # === Detectar texto sin comillas (error común) ===
@@ -1463,7 +1487,6 @@ class VentanaPrincipal:
         btn_frame.pack(fill=tk.X, pady=6)
         ttk.Button(btn_frame, text="Cargar Archivo", command=self.cargar_archivo).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_frame, text="Analizar", command=self.analizar).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_frame, text="Exportar", command=self.exportar).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_frame, text="Ventana Análisis", command=self.mostrar_analisis).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_frame, text="Ventana Codificación", command=self.mostrar_codificacion).pack(side=tk.LEFT, padx=4)
 
@@ -1696,7 +1719,7 @@ class VentanaAnalisis(tk.Toplevel):
     def actualizar_analisis(self):
         self.texto_analisis.delete(1.0, tk.END)
         if self.ensamblador.lineas_analizadas:
-            self.texto_analisis.insert(tk.END, f"{'Línea':<8} {'Código Fuente':<45} {'Resultado':<12} {'Descripción':<50}\n")
+            self.texto_analisis.insert(tk.END, f"{'Código Fuente':<50} {'Resultado':<12} {'Descripción':<55}\n")
             self.texto_analisis.insert(tk.END, "=" * 120 + "\n")
             
             inicio = self.pagina_actual * self.elementos_por_pagina
@@ -1704,9 +1727,13 @@ class VentanaAnalisis(tk.Toplevel):
             
             for i in range(inicio, fin):
                 a = self.ensamblador.lineas_analizadas[i]
-                linea_codigo = a['linea'][:42] + '...' if len(a['linea']) > 45 else a['linea']
-                mensaje = a['mensaje'][:47] + '...' if len(a['mensaje']) > 50 else a['mensaje']
-                self.texto_analisis.insert(tk.END, f"{a['numero']:<8} {linea_codigo:<45} {a['resultado']:<12} {mensaje:<50}\n")
+                linea_codigo = a['linea'][:47] + '...' if len(a['linea']) > 50 else a['linea']
+                # Solo mostrar descripción si es incorrecta
+                if a['resultado'] == 'Incorrecta':
+                    mensaje = a['mensaje'][:52] + '...' if len(a['mensaje']) > 55 else a['mensaje']
+                else:
+                    mensaje = ''
+                self.texto_analisis.insert(tk.END, f"{linea_codigo:<50} {a['resultado']:<12} {mensaje:<55}\n")
             
             total_paginas = max(1, (len(self.ensamblador.lineas_analizadas) + self.elementos_por_pagina - 1) // self.elementos_por_pagina)
             self.label_pagina.config(text=f"Página {self.pagina_actual + 1} de {total_paginas}")
@@ -1741,20 +1768,29 @@ class VentanaCodificacion(tk.Toplevel):
         info = ttk.Label(self, text="Dirección inicial de cada segmento: 0250h", font=('Helvetica', 11, 'bold'))
         info.pack(pady=10)
 
-        frame_principal = ttk.Frame(self)
-        frame_principal.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        # Notebook con pestañas
+        notebook = ttk.Notebook(self)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        self.texto_codigo = tk.Text(frame_principal, wrap=tk.NONE, font=('Courier New', 10))
-        scroll_x = ttk.Scrollbar(frame_principal, orient=tk.HORIZONTAL, command=self.texto_codigo.xview)
-        scroll_y = ttk.Scrollbar(frame_principal, orient=tk.VERTICAL, command=self.texto_codigo.yview)
+        # Tab Codificación
+        tab1 = ttk.Frame(notebook)
+        notebook.add(tab1, text="Codificación")
+        
+        frame_codigo = ttk.Frame(tab1)
+        frame_codigo.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        self.texto_codigo = tk.Text(frame_codigo, wrap=tk.NONE, font=('Courier New', 10))
+        scroll_x = ttk.Scrollbar(frame_codigo, orient=tk.HORIZONTAL, command=self.texto_codigo.xview)
+        scroll_y = ttk.Scrollbar(frame_codigo, orient=tk.VERTICAL, command=self.texto_codigo.yview)
         self.texto_codigo.configure(xscrollcommand=scroll_x.set, yscrollcommand=scroll_y.set)
         
         scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
         scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
         self.texto_codigo.pack(fill=tk.BOTH, expand=True)
         
-        frame_paginacion = ttk.Frame(self)
-        frame_paginacion.pack(fill=tk.X, padx=10, pady=5)
+        # Frame de paginación
+        frame_paginacion = ttk.Frame(tab1)
+        frame_paginacion.pack(fill=tk.X, padx=5, pady=5)
         
         ttk.Button(frame_paginacion, text="← Anterior", command=self.pagina_anterior).pack(side=tk.LEFT, padx=2)
         self.label_pagina = ttk.Label(frame_paginacion, text="Página 1")
@@ -1766,13 +1802,29 @@ class VentanaCodificacion(tk.Toplevel):
         self.combo_elementos.set(self.elementos_por_pagina)
         self.combo_elementos.pack(side=tk.LEFT)
         self.combo_elementos.bind("<<ComboboxSelected>>", lambda e: self.cambiar_elementos())
+        
+        # Tab Tabla de Símbolos
+        tab2 = ttk.Frame(notebook)
+        notebook.add(tab2, text="Tabla de Símbolos")
+        
+        frame_simbolos = ttk.Frame(tab2)
+        frame_simbolos.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        self.texto_simbolos = tk.Text(frame_simbolos, wrap=tk.NONE, font=('Courier New', 10))
+        scroll_x2 = ttk.Scrollbar(frame_simbolos, orient=tk.HORIZONTAL, command=self.texto_simbolos.xview)
+        scroll_y2 = ttk.Scrollbar(frame_simbolos, orient=tk.VERTICAL, command=self.texto_simbolos.yview)
+        self.texto_simbolos.configure(xscrollcommand=scroll_x2.set, yscrollcommand=scroll_y2.set)
+        
+        scroll_y2.pack(side=tk.RIGHT, fill=tk.Y)
+        scroll_x2.pack(side=tk.BOTTOM, fill=tk.X)
+        self.texto_simbolos.pack(fill=tk.BOTH, expand=True)
 
         self.actualizar()
     
     def pagina_anterior(self):
         if self.pagina_actual > 0:
             self.pagina_actual -= 1
-            self.actualizar()
+            self.actualizar_codificacion()
     
     def pagina_siguiente(self):
         if not self.ensamblador.lineas_codificadas:
@@ -1780,20 +1832,24 @@ class VentanaCodificacion(tk.Toplevel):
         total_paginas = max(1, (len(self.ensamblador.lineas_codificadas) + self.elementos_por_pagina - 1) // self.elementos_por_pagina)
         if self.pagina_actual < total_paginas - 1:
             self.pagina_actual += 1
-            self.actualizar()
+            self.actualizar_codificacion()
     
     def cambiar_elementos(self):
         try:
             self.elementos_por_pagina = int(self.combo_elementos.get())
             self.pagina_actual = 0
-            self.actualizar()
+            self.actualizar_codificacion()
         except:
             pass
 
     def actualizar(self):
+        self.actualizar_codificacion()
+        self.actualizar_simbolos()
+    
+    def actualizar_codificacion(self):
         self.texto_codigo.delete(1.0, tk.END)
         if self.ensamblador.lineas_codificadas:
-            self.texto_codigo.insert(tk.END, f"{'Dir.':<8} {'Código Fuente':<55} {'Estado / Código Máquina':<30}\n")
+            self.texto_codigo.insert(tk.END, f"{'Dir.':<8} {'Código Fuente':<55} {'Codificación Instrucciones':<30}\n")
             self.texto_codigo.insert(tk.END, "=" * 100 + "\n")
             
             inicio = self.pagina_actual * self.elementos_por_pagina
@@ -1810,6 +1866,18 @@ class VentanaCodificacion(tk.Toplevel):
         else:
             self.texto_codigo.insert(tk.END, "Realice el análisis primero.\n")
             self.label_pagina.config(text="Página 1 de 1")
+    
+    def actualizar_simbolos(self):
+        self.texto_simbolos.delete(1.0, tk.END)
+        if self.ensamblador.tabla_simbolos:
+            self.texto_simbolos.insert(tk.END, f"{'Símbolo':<20} {'Tipo':<15} {'Valor':<25} {'Tamaño':<10} {'Dirección':<10}\n")
+            self.texto_simbolos.insert(tk.END, "=" * 90 + "\n")
+            for s in self.ensamblador.tabla_simbolos.values():
+                dir_str = s.direccion if s.direccion else '----'
+                valor_str = s.valor[:22] + '...' if len(s.valor) > 25 else s.valor
+                self.texto_simbolos.insert(tk.END, f"{s.nombre:<20} {s.tipo:<15} {valor_str:<25} {s.tamanio:<10} {dir_str:<10}\n")
+        else:
+            self.texto_simbolos.insert(tk.END, "Realice el análisis primero.\n")
 
 
 if __name__ == "__main__":
