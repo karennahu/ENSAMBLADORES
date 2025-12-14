@@ -1,5 +1,7 @@
-#EQUIPO2 - Ensamblador 8086 con Codificación de Instrucciones
-# Versión mejorada con análisis sintáctico basado en documentación oficial
+#EQUIPO2
+# Diana Garcia Romero
+#Karen Navarro Hurtado
+#Nolan Baruk Fernandez Landa
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
