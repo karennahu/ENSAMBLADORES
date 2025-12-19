@@ -1,7 +1,5 @@
-#EQUIPO2
-# Diana Garcia Romero
-#Karen Navarro Hurtado
-#Nolan Baruk Fernandez Landa
+#EQUIPO2 - Ensamblador 8086 con Codificación de Instrucciones
+# Versión mejorada con análisis sintáctico basado en documentación oficial
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -528,7 +526,7 @@ class Ensamblador8086:
                 return "Correcta", "Inicio de segmento de código"
             else:
                 # Declaración de segmento incorrecta (ej: .stacks segment, .datas segment)
-                return "Incorrecta", f"Declaración de segmento inválida: '{linea_texto}'. Use: .stack segment, .data segment o .code segment"
+                return "Incorrecta", f"Declaración de segmento inválida"
         
         if tokens[0].valor.upper() == 'ENDS':
             return "Correcta", "Fin de segmento"
@@ -568,8 +566,8 @@ class Ensamblador8086:
                 return "Incorrecta", f"Instrucción '{directiva}' no permitida en segmento de pila"
             # Verificar si es una declaración de datos (debería estar en .data)
             if directiva in ['DB', 'DD', 'DQ', 'DT', 'EQU']:
-                return "Incorrecta", f"'{directiva}' no permitido en segmento de pila. Use solo DW para reservar espacio"
-            return "Incorrecta", f"'{directiva}' no válido en segmento de pila. Solo se permite DW cantidad DUP(?)"
+                return "Incorrecta", f"'{directiva}' no permitido en segmento de pila."
+            return "Incorrecta", f"'{directiva}' no válido en segmento de pila."
         
         # DW cantidad DUP(?) o DW cantidad
         valor_str = ' '.join([t.valor for t in tokens[1:]])
@@ -586,7 +584,7 @@ class Ensamblador8086:
         if re.match(r'^DUP\s*\([^)]+\)$', valor_str, re.IGNORECASE):
             return "Incorrecta", "DUP requiere cantidad antes: DW cantidad DUP(?)"
         
-        return "Incorrecta", f"Formato inválido en pila: {valor_str}. Use: DW cantidad DUP(?)"
+        return "Incorrecta", f"Formato inválido en pila: {valor_str}."
 
     def validar_segmento_datos(self, tokens: List[Token]) -> Tuple[str, str]:
         """
@@ -640,7 +638,7 @@ class Ensamblador8086:
             # Verificar si es una instrucción
             if directiva in self.instrucciones:
                 return "Incorrecta", f"Instrucción '{directiva}' no permitida en segmento de datos"
-            return "Incorrecta", f"Directiva inválida: '{tokens[1].valor}'. Use: {', '.join(directivas_validas)}"
+            return "Incorrecta", f"Directiva inválida: '{tokens[1].valor}'."
         
         # Validar el valor/expresión
         valor_tokens = tokens[2:]
@@ -744,13 +742,13 @@ class Ensamblador8086:
                 for t in valor_tokens
             )
             if todas_palabras:
-                return "Incorrecta", f"Texto sin comillas. Use: {nombre} {directiva} \"{valor_str}\""
+                return "Incorrecta", f"Texto sin comillas."
         
         if len(valor_tokens) == 1 and valor_tokens[0].tipo == TipoToken.SIMBOLO:
             val = valor_tokens[0].valor
             if not val.upper() in self.registros and not val.upper() in self.pseudoinstrucciones:
                 if len(val) > 1 and val.isalpha():
-                    return "Incorrecta", f"¿Texto sin comillas? Use: {nombre} {directiva} \"{val}\""
+                    return "Incorrecta", f"¿Texto sin comillas?"
         
         return "Incorrecta", f"Valor inválido para {directiva}: '{valor_str}'"
 
@@ -760,6 +758,10 @@ class Ensamblador8086:
         - Instrucciones sin operandos: NOP, RET, etc.
         - Instrucciones con 1 operando: PUSH, POP, INC, JMP, etc.
         - Instrucciones con 2 operandos: MOV, ADD, CMP, etc.
+        
+        Validaciones adicionales:
+        - Los operandos deben ser del mismo tamaño (8 o 16 bits)
+        - Las etiquetas deben estar definidas PREVIAMENTE (no saltos hacia adelante)
         """
         if not tokens:
             return "Correcta", "Línea vacía"
@@ -785,11 +787,11 @@ class Ensamblador8086:
         if len(tokens_val) >= 2:
             segundo_token = tokens_val[1].valor.upper()
             if segundo_token in directivas_datos:
-                return "Incorrecta", f"Declaración de datos no permitida en segmento de código. Use segmento .data"
+                return "Incorrecta", f"Declaración de datos no permitida en segmento de código."
         
         # Si el primer token es una directiva de datos
         if instr in directivas_datos:
-            return "Incorrecta", f"'{instr}' no permitido en segmento de código. Use segmento .data"
+            return "Incorrecta", f"'{instr}' no permitido en segmento de código."
 
         # === Pseudoinstrucciones permitidas en código ===
         # ASSUME, PROC, ENDP, ORG son válidos en .code
@@ -809,8 +811,8 @@ class Ensamblador8086:
         operandos = [t for t in tokens_val[1:] if t.valor != ',']
         num_operandos = len(operandos)
 
-        # === Verificar que los símbolos usados estén declarados ===
-        # (excepto registros, constantes numéricas y etiquetas de código)
+        # === Verificar que los símbolos usados estén declarados PREVIAMENTE ===
+        # Las etiquetas para saltos DEBEN estar definidas antes (no saltos hacia adelante)
         for op in operandos:
             op_val = op.valor
             op_upper = op_val.upper()
@@ -854,10 +856,9 @@ class Ensamblador8086:
                         break
                 
                 if not simbolo_encontrado:
-                    # Podría ser una etiqueta que aún no se ha declarado (salto hacia adelante)
-                    # Para saltos, permitimos etiquetas no declaradas aún
+                    # Para SALTOS: la etiqueta DEBE estar definida previamente
                     if instr in ['JNAE', 'JNE', 'JNLE', 'LOOPE', 'JA', 'JC']:
-                        continue  # Los saltos pueden referenciar etiquetas adelante
+                        return "Incorrecta", f"Etiqueta '{op_val}' no definida previamente"
                     
                     return "Incorrecta", f"Símbolo '{op_val}' no declarado en segmento de datos"
 
@@ -894,12 +895,69 @@ class Ensamblador8086:
                 if op1 not in self.registros_16bit:
                     return "Incorrecta", "LEA requiere registro de 16 bits como destino"
             
+            # === VALIDACIÓN DE TAMAÑO DE OPERANDOS ===
+            # Para AND, OR, XOR los operandos deben ser del mismo tamaño
+            if instr in ['AND', 'OR', 'XOR']:
+                tam_op1 = self.obtener_tamano_operando(op1)
+                tam_op2 = self.obtener_tamano_operando(op2)
+                
+                # Si ambos tamaños son conocidos y diferentes, es error
+                if tam_op1 != 0 and tam_op2 != 0 and tam_op1 != tam_op2:
+                    return "Incorrecta", f"Operandos de diferente tamaño"
+            
             msg = f"Instrucción {instr} válida"
             return "Correcta", f"{msg_etiq} + {msg}" if msg_etiq else msg
 
         # === Instrucción válida por defecto ===
         msg = f"Instrucción {instr} válida"
         return "Correcta", f"{msg_etiq} + {msg}" if msg_etiq else msg
+    
+    def obtener_tamano_operando(self, operando: str) -> int:
+        """
+        Determina el tamaño en bits de un operando.
+        Retorna: 8, 16, o 0 si no se puede determinar.
+        """
+        op = operando.strip().upper()
+        
+        # Registros de 8 bits
+        if op in self.registros_8bit:
+            return 8
+        
+        # Registros de 16 bits
+        if op in self.registros_16bit:
+            return 16
+        
+        # Registros de segmento (16 bits)
+        if op in self.registros_segmento:
+            return 16
+        
+        # Constante numérica - determinar por valor
+        valor = 0
+        try:
+            if op.endswith('H'):
+                valor = int(op[:-1], 16)
+            elif op.endswith('B'):
+                valor = int(op[:-1], 2)
+            elif op.endswith('D'):
+                valor = int(op[:-1])
+            elif op.isdigit():
+                valor = int(op)
+            else:
+                # Hexadecimal que empieza con 0
+                if re.match(r'^0[0-9A-F]+$', op):
+                    valor = int(op, 16)
+                else:
+                    return 0  # No se puede determinar
+            
+            # Si el valor cabe en 8 bits (-128 a 255)
+            if -128 <= valor <= 255:
+                return 8
+            # Si el valor cabe en 16 bits
+            if -32768 <= valor <= 65535:
+                return 16
+            return 16  # Por defecto 16 bits para valores grandes
+        except:
+            return 0  # No se puede determinar
 
     def agregar_simbolo(self, tokens_linea: List[Token]):
         nombre = tokens_linea[0].valor.rstrip(":")
@@ -1489,6 +1547,7 @@ class VentanaPrincipal:
         btn_frame.pack(fill=tk.X, pady=6)
         ttk.Button(btn_frame, text="Cargar Archivo", command=self.cargar_archivo).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_frame, text="Analizar", command=self.analizar).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_frame, text="Exportar", command=self.exportar).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_frame, text="Ventana Análisis", command=self.mostrar_analisis).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_frame, text="Ventana Codificación", command=self.mostrar_codificacion).pack(side=tk.LEFT, padx=4)
 
@@ -1721,8 +1780,8 @@ class VentanaAnalisis(tk.Toplevel):
     def actualizar_analisis(self):
         self.texto_analisis.delete(1.0, tk.END)
         if self.ensamblador.lineas_analizadas:
-            self.texto_analisis.insert(tk.END, f"{'Código Fuente':<50} {'Resultado':<12} {'Descripción':<55}\n")
-            self.texto_analisis.insert(tk.END, "=" * 120 + "\n")
+            self.texto_analisis.insert(tk.END, f"{'Código Fuente':<50} {'Resultado':<12} {'Descripción'}\n")
+            self.texto_analisis.insert(tk.END, "=" * 140 + "\n")
             
             inicio = self.pagina_actual * self.elementos_por_pagina
             fin = min(inicio + self.elementos_por_pagina, len(self.ensamblador.lineas_analizadas))
@@ -1730,12 +1789,12 @@ class VentanaAnalisis(tk.Toplevel):
             for i in range(inicio, fin):
                 a = self.ensamblador.lineas_analizadas[i]
                 linea_codigo = a['linea'][:47] + '...' if len(a['linea']) > 50 else a['linea']
-                # Solo mostrar descripción si es incorrecta
+                # Solo mostrar descripción si es incorrecta - SIN TRUNCAR
                 if a['resultado'] == 'Incorrecta':
-                    mensaje = a['mensaje'][:52] + '...' if len(a['mensaje']) > 55 else a['mensaje']
+                    mensaje = a['mensaje']
                 else:
                     mensaje = ''
-                self.texto_analisis.insert(tk.END, f"{linea_codigo:<50} {a['resultado']:<12} {mensaje:<55}\n")
+                self.texto_analisis.insert(tk.END, f"{linea_codigo:<50} {a['resultado']:<12} {mensaje}\n")
             
             total_paginas = max(1, (len(self.ensamblador.lineas_analizadas) + self.elementos_por_pagina - 1) // self.elementos_por_pagina)
             self.label_pagina.config(text=f"Página {self.pagina_actual + 1} de {total_paginas}")
@@ -1851,7 +1910,7 @@ class VentanaCodificacion(tk.Toplevel):
     def actualizar_codificacion(self):
         self.texto_codigo.delete(1.0, tk.END)
         if self.ensamblador.lineas_codificadas:
-            self.texto_codigo.insert(tk.END, f"{'Dir.':<8} {'Código Fuente':<55} {'Codificación Instrucciones':<30}\n")
+            self.texto_codigo.insert(tk.END, f"{'Dir.':<8} {'Código Fuente':<55} {'Estado / Código Máquina':<30}\n")
             self.texto_codigo.insert(tk.END, "=" * 100 + "\n")
             
             inicio = self.pagina_actual * self.elementos_por_pagina
