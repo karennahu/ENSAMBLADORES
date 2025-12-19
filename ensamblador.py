@@ -1,5 +1,7 @@
-#EQUIPO2 - Ensamblador 8086 con Codificación de Instrucciones
-# Versión mejorada con análisis sintáctico basado en documentación oficial
+#EQUIPO2
+#Diana Garcia Romero
+#Karen Navarro Hurtado
+#Nolan Fernandez Landa
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -1547,7 +1549,6 @@ class VentanaPrincipal:
         btn_frame.pack(fill=tk.X, pady=6)
         ttk.Button(btn_frame, text="Cargar Archivo", command=self.cargar_archivo).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_frame, text="Analizar", command=self.analizar).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_frame, text="Exportar", command=self.exportar).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_frame, text="Ventana Análisis", command=self.mostrar_analisis).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_frame, text="Ventana Codificación", command=self.mostrar_codificacion).pack(side=tk.LEFT, padx=4)
 
@@ -1826,9 +1827,6 @@ class VentanaCodificacion(tk.Toplevel):
         self.pagina_actual = 0
         self.elementos_por_pagina = 25
 
-        info = ttk.Label(self, text="Dirección inicial de cada segmento: 0250h", font=('Helvetica', 11, 'bold'))
-        info.pack(pady=10)
-
         # Notebook con pestañas
         notebook = ttk.Notebook(self)
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -1910,7 +1908,7 @@ class VentanaCodificacion(tk.Toplevel):
     def actualizar_codificacion(self):
         self.texto_codigo.delete(1.0, tk.END)
         if self.ensamblador.lineas_codificadas:
-            self.texto_codigo.insert(tk.END, f"{'Dir.':<8} {'Código Fuente':<55} {'Estado / Código Máquina':<30}\n")
+            self.texto_codigo.insert(tk.END, f"{'Dir.':<8} {'Código Fuente':<55} {'Codificaciones':<30}\n")
             self.texto_codigo.insert(tk.END, "=" * 100 + "\n")
             
             inicio = self.pagina_actual * self.elementos_por_pagina
